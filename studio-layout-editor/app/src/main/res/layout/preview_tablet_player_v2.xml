@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/player_root_v2"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#151624"
+    tools:device="spec:width=2560px,height=1600px,dpi=400,orientation=landscape">
+
+    <!-- 顶部状态栏占位间隙 -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/v2_top_status_bar_guideline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintGuide_begin="24dp" />
+
+    <!-- 左右分界引导线 -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/v2_split_guideline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.48" />
+
+    <!-- ======================================================== -->
+    <!-- 1. 左侧区域：封面独占居中 (可拖拽尺寸与边距)             -->
+    <!-- ======================================================== -->
+    <ImageView
+        android:id="@+id/v2_artwork"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginStart="36dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginEnd="20dp"
+        android:background="#2E1D45"
+        android:scaleType="centerCrop"
+        android:src="@drawable/ic_module"
+        app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintEnd_toStartOf="@id/v2_switcher_container"
+        app:layout_constraintHeight_default="percent"
+        app:layout_constraintHeight_percent="0.65"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/v2_top_status_bar_guideline"
+        tools:srcCompat="@drawable/ic_module" />
+
+    <!-- ======================================================== -->
+    <!-- 2. 中间区域：上下两个圆形切换控件 (播放三角 / 歌词图标)   -->
+    <!-- ======================================================== -->
+    <LinearLayout
+        android:id="@+id/v2_switcher_container"
+        android:layout_width="64dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/v2_split_guideline"
+        app:layout_constraintTop_toBottomOf="@id/v2_top_status_bar_guideline">
+
+        <!-- 播放三角按钮 (点击切换右侧为播放控件) -->
+        <ImageButton
+            android:id="@+id/btn_switch_controls"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginBottom="12dp"
+            android:background="@android:drawable/btn_default"
+            android:src="@android:drawable/ic_media_play"
+            android:contentDescription="切换播放控件" />
+
+        <!-- 歌词图标按钮 (点击切换右侧为实时歌词) -->
+        <ImageButton
+            android:id="@+id/btn_switch_lyrics"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@android:drawable/btn_default"
+            android:src="@android:drawable/ic_menu_edit"
+            android:contentDescription="切换实时歌词" />
+    </LinearLayout>
+
+    <!-- ======================================================== -->
+    <!-- 3. 右侧面板：实时歌词 或 播放控件二选一                 -->
+    <!-- ======================================================== -->
+    <FrameLayout
+        android:id="@+id/v2_right_container"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="24dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/v2_split_guideline"
+        app:layout_constraintTop_toBottomOf="@id/v2_top_status_bar_guideline">
+
+        <!-- 歌词视图 -->
+        <LinearLayout
+            android:id="@+id/v2_lyrics_content"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:text="알고 싶어지는 걸"
+                android:textColor="#66FFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="I can't help but feeling so much jelly-us"
+                android:textColor="#FFFFFF"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="#22FFFFFF"
+                android:paddingStart="8dp"
+                android:paddingTop="3dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="3dp"
+                android:text="you make me jelly-us"
+                android:textColor="#DDFFFFFF"
+                android:textSize="12sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="Hey, hey, hey"
+                android:textColor="#44FFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- 播放控制视图 (跟随歌名专辑在此显示) -->
+        <LinearLayout
+            android:id="@+id/v2_controls_content"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:padding="20dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/v2_track_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="jellyous"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/v2_track_subtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="ILLIT"
+                android:textColor="#A0A0B0"
+                android:textSize="15sp" />
+
+            <SeekBar
+                android:id="@+id/v2_progress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:progress="42"
+                android:max="100" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_weight="1"
+                    android:src="@android:drawable/ic_menu_rotate" />
+
+                <ImageView
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:src="@android:drawable/ic_media_previous" />
+
+                <ImageView
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1"
+                    android:src="@android:drawable/ic_media_pause" />
+
+                <ImageView
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:src="@android:drawable/ic_media_next" />
+
+                <ImageView
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_weight="1"
+                    android:src="@android:drawable/ic_menu_revert" />
+            </LinearLayout>
+
+            <SeekBar
+                android:id="@+id/v2_volume"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:progress="60"
+                android:max="100" />
+        </LinearLayout>
+    </FrameLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

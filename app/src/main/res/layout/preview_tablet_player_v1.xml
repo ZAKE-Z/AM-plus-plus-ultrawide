@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/player_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#151624"
+    tools:device="spec:width=2560px,height=1600px,dpi=400,orientation=landscape">
+
+    <!-- ======================================================== -->
+    <!-- 分栏引导线 (拖动此处可调整歌词面板与左侧控件的宽度比例) -->
+    <!-- ======================================================== -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/split_guideline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.52" />
+
+    <!-- 顶部状态栏占位间隙 -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/top_status_bar_guideline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintGuide_begin="24dp" />
+
+    <!-- ======================================================== -->
+    <!-- 1. 最左侧：封面 (可直接拖动大小与位置)                 -->
+    <!-- ======================================================== -->
+    <ImageView
+        android:id="@+id/artwork_container"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="20dp"
+        android:layout_marginBottom="20dp"
+        android:background="#2E1D45"
+        android:scaleType="centerCrop"
+        android:src="@drawable/ic_module"
+        app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintHeight_percent="0.60"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/top_status_bar_guideline"
+        app:layout_constraintBottom_toBottomOf="parent"
+        tools:srcCompat="@drawable/ic_module" />
+
+    <!-- ======================================================== -->
+    <!-- 2. 中间区域：歌曲信息 + 播放控件组 (可整体或单独拖动)   -->
+    <!-- ======================================================== -->
+
+    <!-- 歌曲标题 -->
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="8dp"
+        android:text="jellyous"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        app:layout_constraintStart_toEndOf="@id/artwork_container"
+        app:layout_constraintEnd_toStartOf="@id/list_favorite_icon"
+        app:layout_constraintTop_toTopOf="@id/artwork_container" />
+
+    <!-- 收藏星标按钮 -->
+    <ImageView
+        android:id="@+id/list_favorite_icon"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginEnd="8dp"
+        android:src="@android:drawable/btn_star_big_off"
+        app:layout_constraintBottom_toBottomOf="@id/title"
+        app:layout_constraintEnd_toStartOf="@id/list_more_icon"
+        app:layout_constraintTop_toTopOf="@id/title" />
+
+    <!-- 更多操作按钮 -->
+    <ImageView
+        android:id="@+id/list_more_icon"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginEnd="16dp"
+        android:src="@android:drawable/ic_menu_more"
+        app:layout_constraintBottom_toBottomOf="@id/title"
+        app:layout_constraintEnd_toStartOf="@id/split_guideline"
+        app:layout_constraintTop_toTopOf="@id/title" />
+
+    <!-- 艺术家与专辑副标题 -->
+    <TextView
+        android:id="@+id/subtitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="ILLIT"
+        android:textColor="#A0A0B0"
+        android:textSize="15sp"
+        app:layout_constraintEnd_toEndOf="@id/title"
+        app:layout_constraintStart_toStartOf="@id/title"
+        app:layout_constraintTop_toBottomOf="@id/title" />
+
+    <!-- 进度条控件组 -->
+    <SeekBar
+        android:id="@+id/progress"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:progress="42"
+        android:max="100"
+        app:layout_constraintEnd_toEndOf="@id/list_more_icon"
+        app:layout_constraintStart_toStartOf="@id/title"
+        app:layout_constraintTop_toBottomOf="@id/subtitle" />
+
+    <!-- 已播放时间 -->
+    <TextView
+        android:id="@+id/current_time_progress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="1:51"
+        android:textColor="#808090"
+        android:textSize="11sp"
+        app:layout_constraintStart_toStartOf="@id/progress"
+        app:layout_constraintTop_toBottomOf="@id/progress" />
+
+    <!-- 剩余时间 -->
+    <TextView
+        android:id="@+id/total_time_progress"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="-0:52"
+        android:textColor="#808090"
+        android:textSize="11sp"
+        app:layout_constraintEnd_toEndOf="@id/progress"
+        app:layout_constraintTop_toBottomOf="@id/progress" />
+
+    <!-- 播放传输控制条 (随机、上一首、播放/暂停、下一首、循环) -->
+    <LinearLayout
+        android:id="@+id/transport_container"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="18dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        app:layout_constraintEnd_toEndOf="@id/progress"
+        app:layout_constraintStart_toStartOf="@id/progress"
+        app:layout_constraintTop_toBottomOf="@id/current_time_progress">
+
+        <ImageView
+            android:id="@+id/shuffle"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_weight="1"
+            android:src="@android:drawable/ic_menu_rotate" />
+
+        <ImageView
+            android:id="@+id/previous_rewind"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:src="@android:drawable/ic_media_previous" />
+
+        <ImageView
+            android:id="@+id/play_pause"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:src="@android:drawable/ic_media_pause" />
+
+        <ImageView
+            android:id="@+id/next_fast_forward"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:src="@android:drawable/ic_media_next" />
+
+        <ImageView
+            android:id="@+id/repeat"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_weight="1"
+            android:src="@android:drawable/ic_menu_revert" />
+    </LinearLayout>
+
+    <!-- 音量调节条 -->
+    <SeekBar
+        android:id="@+id/volume_slider"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:progress="60"
+        android:max="100"
+        app:layout_constraintEnd_toEndOf="@id/progress"
+        app:layout_constraintStart_toStartOf="@id/progress"
+        app:layout_constraintTop_toBottomOf="@id/transport_container" />
+
+    <!-- ======================================================== -->
+    <!-- 3. 右侧区域：实时歌词面板 (可拖动分界线调整宽度)        -->
+    <!-- ======================================================== -->
+    <FrameLayout
+        android:id="@+id/lyrics_pane"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/split_guideline"
+        app:layout_constraintTop_toBottomOf="@id/top_status_bar_guideline">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp"
+                android:text="알고 싶어지는 걸"
+                android:textColor="#66FFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="I can't help but feeling so much jelly-us"
+                android:textColor="#FFFFFF"
+                android:textSize="30sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="#22FFFFFF"
+                android:paddingStart="8dp"
+                android:paddingTop="3dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="3dp"
+                android:text="you make me jelly-us"
+                android:textColor="#DDFFFFFF"
+                android:textSize="12sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:text="Hey, hey, hey"
+                android:textColor="#44FFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </FrameLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
