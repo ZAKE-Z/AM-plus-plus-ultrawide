@@ -4,23 +4,49 @@
   <img src="docs/images/b851cbb7f571c6666f1a41377baa778b.jpg" alt="AM++ icon" width="180">
 </p>
 
-<h1 align="center">AM++</h1>
+<h1 align="center">AM++ Ultrawide (超宽屏适配版)</h1>
 
 <p align="center">
   简体中文 | <a href="README.en.md">English</a>
 </p>
 
 <p align="center">
-  Apple Music 的 Android 增强模块：平板双栏、歌词定制与液态玻璃。
+  Apple Music 的 Android 增强模块（AM++）超宽屏适配版本：针对车机带状屏、CarPlay / Car+ 车载投屏量身定制。
 </p>
 
 <p align="center">
-  <a href="https://github.com/Zennmn/AM-plus-plus/actions/workflows/build.yml"><img src="https://github.com/Zennmn/AM-plus-plus/actions/workflows/build.yml/badge.svg" alt="Build"></a>
-  <a href="https://github.com/Zennmn/AM-plus-plus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Zennmn/AM-plus-plus" alt="GNU GPL v3.0"></a>
+  <a href="https://github.com/ZAKE-Z/AM-plus-plus-ultrawide/blob/main/LICENSE"><img src="https://img.shields.io/github/license/ZAKE-Z/AM-plus-plus-ultrawide" alt="GNU GPL v3.0"></a>
   <img src="https://img.shields.io/badge/Android-API%2026%2B-3DDC84?logo=android&logoColor=white" alt="Android API 26+">
   <img src="https://img.shields.io/badge/libxposed-API%20102-7F52FF" alt="libxposed API 102">
-  <a href="#支持项目"><img src="https://img.shields.io/badge/支持项目-微信赞赏-E3B341?logo=wechat&amp;logoColor=white" alt="微信赞赏支持项目"></a>
+  <a href="https://github.com/Zennmn/AM-plus-plus"><img src="https://img.shields.io/badge/Upstream-Zennmn%2FAM--plus--plus-blue" alt="Upstream Repository"></a>
 </p>
+
+> [!NOTE]
+> 本项目分叉自原版开源项目 [AM++ (Zennmn/AM-plus-plus)](https://github.com/Zennmn/AM-plus-plus)。核心目标在于解决 Apple Music 在汽车车机长条超宽屏、手机车联投屏（如 OPPO Car+）等超宽横屏场景下的界面比例失调与布局受限问题，重构横屏播放界面的三栏交互结构。
+
+---
+
+### 📌 适用场景与免责声明
+
+> **使用说明与场景实测提示**：  
+> 本项目主要针对车载横向超宽屏幕场景进行定制调整与体验优化。由于 Android 生态中各类设备的屏幕长宽比、系统 DPI 与物理分辨率繁多，本项目**尚未在各类比例、各类 DPI 及各类分辨率的屏幕设备上进行全面实测**。  
+> 目前在作者个人的主力使用场景（**1920×720 分辨率，通过 OPPO Car+ 车联投屏**）下，整体界面比例、控件排布与视觉呈现效果表现良好。非常欢迎在其他类似车机、折叠屏或平板设备上尝试并反馈使用体验。
+
+---
+
+### 🌟 超宽屏定制特性
+
+1. **Apple TV / CarPlay 风格经典三栏布局**：
+   - **左侧**：大尺寸专辑封面独立完整展现，比例优雅协调。
+   - **中间**：歌曲标题与艺术家居中呈现；播放进度条两端延伸；底层全幅展开的播控按钮（上一曲居左、播放/暂停居中、下一曲居右）；精简无背景的辅助控制组（随机、循环、喜爱收藏、更多选项）。针对车载触控场景，移除冗余的屏幕音量条（直接由车机物理旋钮/按键接管）。
+   - **右侧**：歌词与待播列表展示区域。
+2. **双版本构建方案（Product Flavors）**：
+   - **V1（经典独立歌词版）**：左封面、中播控、右侧固定显示实时滚动歌词。
+   - **V2（歌词 / 待播列表快速切换版）**：播控区底部集成极简图标切换栏（[翻译]、[歌词]、[播放列表]），轻触即可在右侧面板随时切换实时歌词与待播队列，无需占用中栏或挤压封面。
+3. **沉浸式横屏全屏**：展开横屏全屏播放器时，自动隐藏顶部状态栏与底部系统导航栏，充分利用超宽屏的所有有效像素。
+4. **高度基准视口归一化**：以标准 720 高度为参考基准统一计算布局几何与字体比例，有效防止因非标车机 DPI 设置导致的进度时间文字折行与裁切。
+
+---
 
 <p align="center">
   没有lsposed和root？不妨试试<a href="https://github.com/Zennmn/AM-plus-plus/releases/tag/embedded">npatch 嵌入版</a>

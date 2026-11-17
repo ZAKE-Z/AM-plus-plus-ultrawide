@@ -4,23 +4,49 @@
   <img src="docs/images/b851cbb7f571c6666f1a41377baa778b.jpg" alt="AM++ icon" width="180">
 </p>
 
-<h1 align="center">AM++</h1>
+<h1 align="center">AM++ Ultrawide (Ultrawide Landscape Edition)</h1>
 
 <p align="center">
   <a href="README.md">简体中文</a> | English
 </p>
 
 <p align="center">
-  Apple Music enhancements for Android: a tablet dual-pane player, customizable lyrics, and Liquid Glass.
+  Apple Music enhancements for Android (AM++): Tailored for ultrawide in-car screens, CarPlay / Car+ head unit projections, and wide tablets.
 </p>
 
 <p align="center">
-  <a href="https://github.com/Zennmn/AM-plus-plus/actions/workflows/build.yml"><img src="https://github.com/Zennmn/AM-plus-plus/actions/workflows/build.yml/badge.svg" alt="Build"></a>
-  <a href="https://github.com/Zennmn/AM-plus-plus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Zennmn/AM-plus-plus" alt="GNU GPL v3.0"></a>
+  <a href="https://github.com/ZAKE-Z/AM-plus-plus-ultrawide/blob/main/LICENSE"><img src="https://img.shields.io/github/license/ZAKE-Z/AM-plus-plus-ultrawide" alt="GNU GPL v3.0"></a>
   <img src="https://img.shields.io/badge/Android-API%2026%2B-3DDC84?logo=android&logoColor=white" alt="Android API 26+">
   <img src="https://img.shields.io/badge/libxposed-API%20102-7F52FF" alt="libxposed API 102">
-  <a href="#support-the-project"><img src="https://img.shields.io/badge/Support-WeChat-E3B341?logo=wechat&amp;logoColor=white" alt="Support the project via WeChat"></a>
+  <a href="https://github.com/Zennmn/AM-plus-plus"><img src="https://img.shields.io/badge/Upstream-Zennmn%2FAM--plus--plus-blue" alt="Upstream Repository"></a>
 </p>
+
+> [!NOTE]
+> This repository is a specialized fork of the upstream project [AM++ (Zennmn/AM-plus-plus)](https://github.com/Zennmn/AM-plus-plus). It is dedicated to resolving layout proportions and cramped controls on automotive ultrawide displays, in-car projection environments (such as OPPO Car+), and landscape setups by redesigning the landscape player layout.
+
+---
+
+### 📌 Target Scenario & Disclaimer
+
+> **Usage Notice & Device Testing Disclaimer**:  
+> This project has been customized and tuned primarily for ultrawide automotive landscape display setups. Because the Android ecosystem features a vast spectrum of aspect ratios, system DPI configurations, and hardware display resolutions, **this project has not been extensively tested across diverse screen ratios, arbitrary DPI scales, and various device resolutions**.  
+> In the author's primary use case (**1920×720 resolution projected via OPPO Car+**), the UI proportions, element alignments, and visual rendering hold up very well. Testing and feedback in comparable automotive or wide-screen setups are warmly welcomed.
+
+---
+
+### 🌟 Ultrawide Custom Features
+
+1. **Apple TV / CarPlay Inspired 3-Column Layout**:
+   - **Left**: Large album artwork displayed independently with balanced margins.
+   - **Center**: Track title & artist horizontally centered; wide progress slider; edge-to-edge playback controls (Previous at far left, Play/Pause centered, Next at far right); borderless secondary controls (Shuffle, Repeat, Favorite Star with native fill state synchronization, and More). The volume slider is removed to match modern in-car touch ergonomics (managed by steering wheel/knob hardware).
+   - **Right**: Dedicated container for real-time lyrics and up-next playlist.
+2. **Dual Build Flavors (Product Flavors)**:
+   - **V1 (Fixed Lyrics)**: Classic 3-column with left artwork, centered controls, and fixed synchronized lyrics on the right.
+   - **V2 (Lyrics / Queue Switcher)**: Features a minimalist icon switcher bar at the bottom of the middle controls ([Translation], [Lyrics], [Playlist]), allowing instantaneous toggling between live lyrics and the native queue without squeezing the artwork.
+3. **Immersive Fullscreen Mode**: Automatically hides status and navigation bars upon expanding the landscape player, utilizing every single pixel.
+4. **Viewport Height Normalization**: Normalizes typography and layout metrics against a standard 720-height reference, preventing label clipping across atypical in-car DPI configurations.
+
+---
 
 <p align="center">
   The <a href="https://github.com/Zennmn/AM-plus-plus/releases/tag/embedded">npatch embedded edition</a> can be installed directly without LSPosed.
