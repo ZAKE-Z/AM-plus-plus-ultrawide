@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.Color
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.view.Gravity
@@ -28,9 +29,11 @@ import android.widget.TextView
 import dev.amenhancer.module.ModuleConstants
 import dev.amenhancer.module.config.TargetConfigClient
 import dev.amenhancer.module.hook.ConstraintLayoutPane
+import dev.amenhancer.module.hook.SongColumnVariant
 import dev.amenhancer.module.hook.TabletArtworkLayoutPolicy
 import dev.amenhancer.module.hook.AlphaGradientEdgeFieldProfiles
 import dev.amenhancer.module.hook.ModernXposedRuntime
+import dev.amenhancer.module.hook.TranslationsPopupOffsetHook
 import dev.amenhancer.module.hook.targetBuild
 import dev.amenhancer.module.host.OwnedHostProperty
 import java.util.IdentityHashMap
@@ -40,6 +43,12 @@ import kotlin.math.roundToInt
 internal class TabletSongColumnLayout(
     private val player: ViewGroup, private val songHost: ViewGroup, private val collapse: () -> Unit,
     private val modes: TabletPlaybackModes? = null, private val keepNativeFooter: Boolean = false,
+    private val variant: SongColumnVariant = SongColumnVariant.CENTERED,
+    /** Legacy route only: the module-created lyrics host whose visibility the switcher owns. */
+    private val lyricsHost: View? = null,
+    private val onRightPaneChanged: () -> Unit = {},
+    private val isTranslationActive: () -> Boolean = { false },
+    private val onTranslateClick: () -> Unit = {},
 ) : AutoCloseable {
     companion object {
         @Suppress("DEPRECATION")
@@ -193,11 +202,64 @@ internal class TabletSongColumnLayout(
         alpha = .45f; contentDescription = "媒体输出设备"
         setOnClickListener { PlatformAudioOutputSwitcher.open(player.context) }
     }
+    /** V2 bottom switcher: the translation, lyrics, and playlist row. */
+    private var rightPaneIsQueueState = false
+    val rightPaneIsQueue get() = rightPaneIsQueueState
+    /** Swap the right pane between the lyrics and the playlist (queue) fragment. */
+    fun setRightPaneQueue(queue: Boolean) {
+        if (variant != SongColumnVariant.COVER_LEFT_SWITCHER || rightPaneIsQueueState == queue) return
+        rightPaneIsQueueState = queue
+        switcherBtnState(switchLyrics, !rightPaneIsQueueState)
+        switcherBtnState(switchQueue, rightPaneIsQueueState)
+        onRightPaneChanged()
+    }
+    private fun switcherIconBtn(native: String, description: String, fallback: Drawable, onClick: () -> Unit): ImageButton {
+        return ImageButton(player.context).apply {
+            background = null
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            // Small padding so the icon fills the circle prominently while keeping the circle size intact.
+            setPadding(dp(2f), dp(2f), dp(2f), dp(2f))
+            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+            contentDescription = description
+            val id = resource(native, "drawable")
+            if (id != 0) setImageResource(id) else setImageDrawable(fallback)
+            setOnClickListener { onClick() }
+        }
+    }
+    private val switchTranslate = switcherIconBtn("selector_nowplaying_translations", "翻译", PureTranslateGlyph()) {
+        onTranslateClick()
+    }.apply {
+        setImageDrawable(PureTranslateGlyph())
+    }
+    private val switchLyrics = switcherIconBtn("selector_nowplaying_lyrics", "歌词", LyricsLinesDrawable()) {
+        setRightPaneQueue(false)
+    }
+    private val switchQueue = switcherIconBtn("selector_nowplaying_queue", "播放列表", QueueRowsDrawable()) {
+        setRightPaneQueue(true)
+    }
+    private fun switcherBtnState(btn: ImageButton, selected: Boolean) {
+        if (selected) {
+            btn.background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x40ffffff) }
+            btn.alpha = 1f
+        } else {
+            btn.background = null
+            btn.alpha = .45f
+        }
+    }
     val ready get() = !closed && frame != null && (current != null || currentQueue != null)
     fun readyForPane(songVisible: Boolean) = ready && (if (songVisible) current != null else currentQueue != null)
     init {
         thumb.addView(thumbBar, FrameLayout.LayoutParams(1, 1))
-        listOf(thumb, shuffle, repeat, volume, output).forEach { overlay.addView(it, FrameLayout.LayoutParams(1, 1)) }
+        listOf(thumb, shuffle, repeat, volume, output).forEach {
+            overlay.addView(it, FrameLayout.LayoutParams(1, 1))
+        }
+        if (variant == SongColumnVariant.COVER_LEFT_SWITCHER) {
+            TranslationsPopupOffsetHook.customAnchorProvider = { switchTranslate }
+            listOf(switchTranslate, switchLyrics, switchQueue).forEach {
+                it.visibility = View.INVISIBLE
+                overlay.addView(it, FrameLayout.LayoutParams(1, 1))
+            }
+        }
         player.addView(overlay, ViewGroup.LayoutParams(-1, -1)); overlay.visibility = View.INVISIBLE
         overlay.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(view: View) = Unit
@@ -208,15 +270,17 @@ internal class TabletSongColumnLayout(
     fun fullscreenForProgress(progress: Float) {
         // Keep the viewport stable throughout collapse. Restoring bars at its
         // first frame changes insets while native code is animating to the mini.
-        fullscreen(hideStatusBarEnabled && player.isShown && progress > .001f &&
-            (progress >= .999f || fullscreenWindow != null))
+        // Unconditionally hide the status bar in full-screen expanded player mode.
+        val shouldHide = player.isShown && progress > .001f &&
+            (progress >= .999f || fullscreenWindow != null)
+        fullscreen(shouldHide)
     }
     @Suppress("DEPRECATION")
     fun fullscreen(expanded: Boolean) {
         if (!expanded || closed) {
             val window = fullscreenWindow ?: return
             if (android.os.Build.VERSION.SDK_INT >= 30 && restoreStatusBar)
-                window.insetsController?.show(WindowInsets.Type.statusBars())
+                window.insetsController?.show(WindowInsets.Type.systemBars())
             statusBarBehavior?.close(); statusBarBehavior = null
             legacyFullscreen?.close(); legacyFullscreen = null
             fullscreenWindow = null; restoreStatusBar = false
@@ -227,11 +291,10 @@ internal class TabletSongColumnLayout(
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             val controller = window.insetsController ?: return
             restoreStatusBar = window.decorView.rootWindowInsets?.isVisible(WindowInsets.Type.statusBars()) ?: true
-            if (restoreStatusBar) {
-                statusBarBehavior = OwnedHostProperty({ controller.systemBarsBehavior }, { controller.systemBarsBehavior = it })
-                    .also { it.set(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE) }
-            }
-            controller.hide(WindowInsets.Type.statusBars())
+            statusBarBehavior = OwnedHostProperty({ controller.systemBarsBehavior }, { controller.systemBarsBehavior = it })
+                .also { it.set(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE) }
+            // Hide both status bars and navigation bars for complete immersive full-screen playback
+            controller.hide(WindowInsets.Type.systemBars())
         } else {
             val flag = WindowManager.LayoutParams.FLAG_FULLSCREEN
             legacyFullscreen = OwnedHostProperty({ window.attributes.flags and flag != 0 }, {
@@ -261,15 +324,22 @@ internal class TabletSongColumnLayout(
         val rightInset = (playerLocation[0] + player.width - windowLocation[0] - player.rootView.width +
             (safe?.second ?: 0)).coerceAtLeast(0)
         val width = player.width - leftInset - rightInset
-        val base = TabletArtworkLayoutPolicy.songColumn(width, player.height, scale)
+        val base = TabletArtworkLayoutPolicy.songColumn(width, player.height, scale, variant = variant)
         val nativeLabelHeight = base?.let { nativeProgressLabelHeight(it.contentWidth) } ?: 0
         val layout = if (base != null && nativeLabelHeight > base.progressHeight - base.progressTrackHeight - base.progressLabelGap)
-            TabletArtworkLayoutPolicy.songColumn(width, player.height, scale, nativeLabelHeight) else base
+            TabletArtworkLayoutPolicy.songColumn(width, player.height, scale, nativeLabelHeight, variant) else base
         frame = layout?.let { it.copy(contentLeft = it.contentLeft + leftInset,
+                coverLeft = it.coverLeft + leftInset,
+                metadataLeft = it.metadataLeft + leftInset,
+                queueLeft = it.queueLeft + leftInset,
+                thumbCenterX = it.thumbCenterX + leftInset,
+                switcherCenterX = it.switcherCenterX + leftInset,
                 coverTop = it.coverTop - insetTop, thumbCenterY = it.thumbCenterY - insetTop,
                 controlsTop = it.controlsTop - insetTop, controlsBottom = it.controlsBottom - insetTop,
                 metadataTop = it.metadataTop - insetTop, progressTop = it.progressTop - insetTop,
                 mediaTop = it.mediaTop - insetTop, volumeTop = it.volumeTop - insetTop,
+                modeTop = it.modeTop - insetTop,
+                switchTop = if (it.switchTop < 0) -1 else it.switchTop - insetTop,
                 outputLeft = it.outputLeft + leftInset, outputTop = it.outputTop - insetTop) }
         return frame
     }
@@ -326,63 +396,121 @@ internal class TabletSongColumnLayout(
     }
     private fun prepareColumn(column: ViewGroup, g: TabletArtworkLayoutPolicy.SongColumn) {
         val controls = find(column, "player_controls") as? ViewGroup ?: return
-        val at = origin(column); val left = g.contentLeft - at.first; val top = insetTop - at.second
+        val at = origin(column); val left = g.metadataLeft - at.first; val top = insetTop - at.second
         fun bounds(view: View, x: Int, y: Int, width: Int, height: Int) = properties(view).bounds(x, y, width, height)
         val collaborator = find(column, "collaborator_pill")?.takeIf { it.visibility == View.VISIBLE }
         val extra = collaborator?.height ?: 0
-        collaborator?.let { bounds(it, left, top + g.metadataTop, g.contentWidth, extra) }
+        collaborator?.let { bounds(it, left, top + g.metadataTop, g.metadataWidth, extra) }
         val actions = listOf("list_left_icon", "list_favorite_icon", "emoji_button")
             .mapNotNull { find(column, it) }.filter { it.visibility == View.VISIBLE }
         val gap = css(8f)
-        val textWidth = (g.contentWidth - actions.size * (g.menuSize + gap)).coerceAtLeast(1)
         val textTop = top + g.metadataTop + extra
-        listOf("title", "subtitle").forEachIndexed { index, name ->
-            (find(column, name) as? TextView)?.let { text ->
-                bounds(text, left, textTop + index * g.lineHeight, textWidth, g.lineHeight)
-                properties(text).text(g.metadataFontPx); properties(text).padding(0, 0, 0, 0)
+        if (variant == SongColumnVariant.CENTERED) {
+            // Upstream layout: the actions share the metadata row, right-aligned.
+            val textWidth = (g.metadataWidth - actions.size * (g.menuSize + gap)).coerceAtLeast(1)
+            listOf("title", "subtitle").forEachIndexed { index, name ->
+                (find(column, name) as? TextView)?.let { text ->
+                    bounds(text, left, textTop + index * g.lineHeight, textWidth, g.lineHeight)
+                    properties(text).text(g.metadataFontPx); properties(text).padding(0, 0, 0, 0)
+                }
+            }
+            actions.forEachIndexed { index, view ->
+                bounds(view, left + g.metadataWidth - g.menuSize - index * (g.menuSize + gap),
+                    textTop + g.lineHeight - g.menuSize / 2, g.menuSize, g.menuSize)
+                properties(view).padding(0, 0, 0, 0)
+                (view as? ImageView)?.let { properties(it).image(g.menuSize) }
+            }
+        } else {
+            // TV reference: title and artist centered across the column width.
+            listOf("title", "subtitle").forEachIndexed { index, name ->
+                (find(column, name) as? TextView)?.let { text ->
+                    bounds(text, left, textTop + index * g.lineHeight, g.metadataWidth, g.lineHeight)
+                    properties(text).text(if (index == 0) g.metadataFontPx else g.artistFontPx)
+                    properties(text).padding(0, 0, 0, 0)
+                    properties(text).gravity(Gravity.CENTER_HORIZONTAL)
+                    text.textAlignment = View.TEXT_ALIGNMENT_CENTER
+                }
+            }
+            // Directly position native favorite (slot 2) and more (slot 3) views!
+            // Let native list_favorite_icon execute its original rendering method (filled star when favorited).
+            val favView = find(column, "list_favorite_icon")
+            val moreView = find(column, "list_left_icon")
+            find(column, "emoji_button")?.let { properties(it).emptySlot(true) }
+
+            val actionSize = minOf(g.menuSize, g.modeHeight)
+            val modeY = top + g.modeTop + (g.modeHeight - actionSize) / 2
+            // Pad 22% so icons scale down an additional ~20% inside the hit box
+            val pad = (actionSize * 0.22f).toInt()
+
+            favView?.let { v ->
+                val slotX = slotLeft(g, 2, 4, actionSize) - at.first
+                bounds(v, slotX, modeY, actionSize, actionSize)
+                properties(v).padding(pad, pad, pad, pad)
+                properties(v).clearBackground()
+                v.bringToFront()
+                v.isClickable = true
+                (v as? ImageView)?.scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+
+            moreView?.let { v ->
+                val slotX = slotLeft(g, 3, 4, actionSize) - at.first
+                bounds(v, slotX, modeY, actionSize, actionSize)
+                properties(v).padding(pad, pad, pad, pad)
+                properties(v).clearBackground()
+                v.bringToFront()
+                v.isClickable = true
+                (v as? ImageView)?.scaleType = ImageView.ScaleType.FIT_CENTER
             }
         }
-        actions.forEachIndexed { index, view ->
-            bounds(view, left + g.contentWidth - g.menuSize - index * (g.menuSize + gap),
-                textTop + g.lineHeight - g.menuSize / 2, g.menuSize, g.menuSize)
-            properties(view).padding(0, 0, 0, 0)
-            (view as? ImageView)?.let { properties(it).image(g.menuSize) }
-        }
         val bottom = if (keepNativeFooter) maxOf(g.controlsBottom, player.height - insetTop - insetBottom) else g.controlsBottom
-        bounds(controls, left, top + g.progressTop, g.contentWidth, (bottom - g.progressTop).coerceAtLeast(1))
-        prepareControls(controls, g, extra)
+        bounds(controls, g.contentLeft - at.first, top + g.progressTop, g.contentWidth, (bottom - g.progressTop).coerceAtLeast(1))
+        prepareControls(controls, g, extra, g.contentWidth)
     }
+    /** Evenly spread [count] round buttons across the controls column; slot 0/1 are shuffle/repeat. */
+    private fun slotLeft(g: TabletArtworkLayoutPolicy.SongColumn, index: Int, count: Int, size: Int): Int =
+        if (count <= 1) g.contentLeft + (g.contentWidth - size) / 2
+        else g.contentLeft + ((g.contentWidth - size).toLong() * index / (count - 1)).toInt()
     private fun prepareQueue(column: FrameLayout, g: TabletArtworkLayoutPolicy.SongColumn) {
         val controls = find(column, "player_controls") as? ViewGroup ?: return
         val parent = column.parent as? ViewGroup ?: return
         val at = origin(parent)
         val top = insetTop + g.progressTop - at.second
-        // Native queue fading uses container.height - controls.top, and its list
-        // padding uses controls.height. Keep that one full-height overlay contract:
-        // shortening the list viewport as well would subtract the footer twice.
         val parentHeight = parent.height.takeIf { it > 0 } ?: (player.height - at.second)
         val height = maxOf(parentHeight - top, g.controlsBottom - g.progressTop, 1)
-        properties(column).bounds(g.contentLeft - at.first, top, g.contentWidth, height)
+        properties(column).bounds((g.queueLeft - at.first).coerceAtLeast(0), top, g.queueWidth, height)
         properties(column).padding(0, 0, 0, 0)
-        properties(controls).frameBounds(g.contentWidth, height)
-        prepareControls(controls, g, 0)
-        // The native one-shot layout listener seeds this padding on creation.
-        // Keep its formula in sync after responsive sizing without resizing the list.
-        find(parent, "queue_main_content")?.let { properties(it).bottomPadding(height) }
-        find(parent, "recycler_view_gradients")?.let {
-            properties(it).prepareQueueMask()
-            queueGradients[column] = it
+        properties(controls).frameBounds(g.queueWidth, height)
+        prepareControls(controls, g, 0, g.queueWidth)
+        if (variant == SongColumnVariant.CENTERED) {
+            find(parent, "queue_main_content")?.let { properties(it).bottomPadding(height) }
+            find(parent, "recycler_view_gradients")?.let {
+                properties(it).prepareQueueMask()
+                queueGradients[column] = it
+            }
+        } else {
+            // New TV layout: completely clean up queue view. Hide fixed top history header,
+            // remove bottom padding cutoff, and do not apply any clipping mask so the list
+            // scrolls cleanly from top to bottom with a consistent continuous background.
+            find(parent, "current_player_item")?.let { properties(it).emptySlot(true) }
+            find(parent, "queue_main_content")?.let {
+                properties(it).bottomPadding(0)
+                (it as? androidx.recyclerview.widget.RecyclerView)?.clipToPadding = false
+            }
+            find(parent, "recycler_view_gradients")?.let { gView ->
+                (gView as? ViewGroup)?.clipChildren = false
+                gView.background = null
+            }
         }
     }
-    private fun prepareControls(controls: ViewGroup, g: TabletArtworkLayoutPolicy.SongColumn, extra: Int) {
+    private fun prepareControls(controls: ViewGroup, g: TabletArtworkLayoutPolicy.SongColumn, extra: Int, columnWidth: Int) {
         properties(controls).padding(0, 0, 0, 0); properties(controls).allowOverflow()
         fun bounds(view: View, x: Int, y: Int, width: Int, height: Int) = properties(view).bounds(x, y, width, height)
         listOf("seek_bar_controls", "live_radio_container").mapNotNull { find(controls, it) }.forEach { progress ->
-            bounds(progress, 0, extra, g.contentWidth, g.progressHeight)
+            bounds(progress, 0, extra, columnWidth, g.progressHeight)
             properties(progress).padding(0, 0, 0, 0)
             (progress as? LinearLayout)?.let { properties(it).verticalStack() }
             find(progress, "progress")?.let { track -> properties(track).apply {
-                size(g.contentWidth, g.progressTrackHeight); minimumHeight(0); padding(0, 0, 0, 0)
+                size(columnWidth, g.progressTrackHeight); minimumHeight(0); padding(0, 0, 0, 0)
                 verticalMargins(0, 0); progressThickness(css(8f))
             } }
             val labels = listOf("current_time_progress", "total_time_progress")
@@ -390,19 +518,31 @@ internal class TabletSongColumnLayout(
             val labelHeight = (g.progressHeight - g.progressTrackHeight - g.progressLabelGap).coerceAtLeast(1)
             (labels.firstOrNull()?.parent as? ViewGroup)?.takeIf { it.parent === progress }?.let { labelsRoot ->
                 properties(labelsRoot).apply {
-                    size(g.contentWidth, labelHeight); verticalMargins(g.progressLabelGap, 0); padding(0, 0, 0, 0)
+                    size(columnWidth, labelHeight); verticalMargins(g.progressLabelGap, 0); padding(0, 0, 0, 0)
                     allowOverflow()
                 }
             }
-            labels.forEach { properties(it).apply { text(g.labelFontPx); verticalMargins(0, 0) } }
+            labels.forEach { label -> properties(label).apply {
+                text(g.labelFontPx); verticalMargins(0, 0)
+                if (variant != SongColumnVariant.CENTERED) {
+                    padding(0, 0, 0, 0)
+                    minimumHeight(0)
+                    size(label.layoutParams.width, labelHeight)
+                }
+            } }
             // Audio-quality and karaoke badges retain their native wrap-content
             // size, padding, minimums, font, drawable, alpha and state binding.
         }
         val mediaHeight = (g.mediaHeight - extra).coerceAtLeast(0)
         val button = minOf(g.mediaButtonSize, mediaHeight)
+        // Transport buttons: previous at far left, play/pause centered, next at far right.
         listOf("previous_rewind", "play_pause", "next_fast_forward").forEachIndexed { index, name ->
             (find(controls, name) as? ImageView)?.let { view ->
-                val x = ((g.contentWidth - button) * (index + 1) / 4f).roundToInt()
+                val x = when (index) {
+                    0 -> 0
+                    1 -> (columnWidth - button) / 2
+                    else -> columnWidth - button
+                }
                 bounds(view, x, g.mediaTop - g.progressTop + extra + (mediaHeight - button) / 2, button, button)
                 properties(view).emptySlot(button <= 0)
                 // Preserve Apple's glyph; normalize only its visual size to the reference
@@ -424,12 +564,15 @@ internal class TabletSongColumnLayout(
         if (closed || g == null || column == null || !column.isShown || !player.isShown || expansion <= .001f) {
             overlay.visibility = View.INVISIBLE; volume.setPageVisible(false)
             output.isEnabled = false
+            if (variant == SongColumnVariant.COVER_LEFT_SWITCHER) {
+                listOf(switchTranslate, switchLyrics, switchQueue).forEach { it.visibility = View.INVISIBLE }
+            }
             shuffle.stopFeedback(); repeat.stopFeedback(); return
         }
         val interactive = !transitioning && expansion >= .999f
         output.isEnabled = interactive
         if (!interactive) { shuffle.stopFeedback(); repeat.stopFeedback() }
-        if (queueVisible) queueGradients[column]?.takeIf { it.width > 0 && it.height > 0 }?.let { gradients ->
+        if (queueVisible && variant == SongColumnVariant.CENTERED) queueGradients[column]?.takeIf { it.width > 0 && it.height > 0 }?.let { gradients ->
             val boundary = (insetTop + g.progressTop - origin(gradients).second - css(8f)).coerceIn(0, gradients.height)
             val fade = resource("queue_bottom_gradient_height", "dimen").takeIf { it != 0 }
                 ?.let(player.resources::getDimensionPixelSize) ?: css(24f)
@@ -450,42 +593,84 @@ internal class TabletSongColumnLayout(
         val hitTop = (center - desiredHeight / 2).coerceAtLeast(0)
         val hitHeight = (minOf(insetTop + g.coverTop, player.height, center + desiredHeight / 2) - hitTop).coerceAtLeast(g.thumbHeight)
         val hitWidth = maxOf(dp(44f), g.thumbWidth)
-        place(thumb, g.contentLeft + (g.contentWidth - hitWidth) / 2, hitTop, hitWidth, hitHeight)
+        place(thumb, g.thumbCenterX - hitWidth / 2, hitTop, hitWidth, hitHeight)
         place(thumbBar, (hitWidth - g.thumbWidth) / 2, center - hitTop - g.thumbHeight / 2, g.thumbWidth, g.thumbHeight)
         (thumbBar.background as GradientDrawable).cornerRadius = g.thumbHeight / 2f; thumb.isEnabled = interactive
+        if (variant != SongColumnVariant.CENTERED) {
+            thumb.visibility = View.INVISIBLE
+            thumb.isEnabled = false
+        }
         if (!songVisible) thumb.visibility = View.INVISIBLE
-        // The complete speaker/track/speaker group shares the progress bounds.
-        place(volume, g.contentLeft, insetTop + g.volumeTop, g.contentWidth, g.volumeHeight)
-        // Use a smaller visible symbol while retaining the bottom-row anchor and hit box.
-        val outputGlyphSize = (g.modeIconSize * .68f).roundToInt()
-        val outputSize = maxOf(g.outputSize, g.modeIconSize)
-        val outputPadding = (outputSize - outputGlyphSize) / 2
-        val outputOpposite = outputSize - outputGlyphSize - outputPadding
-        if (output.paddingLeft != outputPadding || output.paddingRight != outputOpposite)
-            output.setPadding(outputPadding, outputPadding, outputOpposite, outputOpposite)
-        place(output, g.outputLeft + (g.outputSize - outputSize) / 2,
-            insetTop + g.outputTop + (g.outputSize - outputSize) / 2, outputSize, outputSize)
-        volume.setPageVisible(interactive)
+        if (variant == SongColumnVariant.COVER_LEFT_SWITCHER) {
+            // TV reference bottom row: 3 large round icon buttons [翻译] [歌词] [播放列表]
+            if (g.switchTop >= 0) {
+                val btnSize = minOf(g.switchHeight, dp(54f))
+                val barTop = insetTop + g.switchTop + (g.switchHeight - btnSize) / 2
+                val btnCount = 3
+                val btnSpacing = (g.contentWidth - btnSize * btnCount) / (btnCount + 1)
+                val btnY = barTop
+
+                val xTranslate = g.contentLeft + btnSpacing
+                val xLyrics = g.contentLeft + btnSpacing * 2 + btnSize
+                val xQueue = g.contentLeft + btnSpacing * 3 + btnSize * 2
+
+                place(switchTranslate, xTranslate, btnY, btnSize, btnSize)
+                place(switchLyrics, xLyrics, btnY, btnSize, btnSize)
+                place(switchQueue, xQueue, btnY, btnSize, btnSize)
+
+                switchTranslate.isEnabled = interactive
+                switchLyrics.isEnabled = interactive
+                switchQueue.isEnabled = interactive
+
+                switcherBtnState(switchTranslate, isTranslationActive())
+                switcherBtnState(switchLyrics, !rightPaneIsQueueState)
+                switcherBtnState(switchQueue, rightPaneIsQueueState)
+            } else {
+                listOf(switchTranslate, switchLyrics, switchQueue).forEach { it.visibility = View.INVISIBLE }
+            }
+        }
+        // Volume slider is completely removed for cover-left variants.
+        if (variant == SongColumnVariant.CENTERED) {
+            place(volume, g.contentLeft, insetTop + g.volumeTop, g.contentWidth, g.volumeHeight)
+            volume.setPageVisible(interactive)
+        } else {
+            volume.visibility = View.INVISIBLE
+            volume.setPageVisible(false)
+        }
         presentedFrame = g
         if (modes == null) { shuffle.visibility = View.INVISIBLE; repeat.visibility = View.INVISIBLE; return }
         val now = android.os.SystemClock.uptimeMillis()
         if (lastModeState == null || now - lastModeRead >= 200L) { lastModeState = modes.state(); lastModeRead = now }
         val state = lastModeState ?: TabletPlaybackModes.State()
+        val modeRowTop = if (variant == SongColumnVariant.CENTERED) g.mediaTop else g.modeTop
+        val modeRowHeight = if (variant == SongColumnVariant.CENTERED) g.mediaHeight else g.modeHeight
+        val modeSize = (if (variant == SongColumnVariant.CENTERED) g.mediaButtonSize
+            else minOf(g.menuSize, modeRowHeight)).coerceAtLeast(1)
         fun mode(view: ModeButton, x: Int, drawable: String, enabled: Boolean, selected: Boolean) {
             val id = resource(drawable, "drawable")
             if (id == 0) { view.visibility = View.INVISIBLE; return }
             if (view.tag != id) { view.setImageResource(id); view.drawable?.mutate(); view.tag = id }
             view.isEnabled = interactive && enabled; view.isSelected = selected
-            val inset = (g.mediaButtonSize - g.modeIconSize) / 2
-            val opposite = g.mediaButtonSize - g.modeIconSize - inset
+            view.background = null
+            val inset = (modeSize - g.modeIconSize) / 2
+            val opposite = modeSize - g.modeIconSize - inset
             if (view.paddingLeft != inset || view.paddingRight != opposite || view.paddingTop != inset || view.paddingBottom != opposite)
                 view.setPadding(inset, inset, opposite, opposite)
-            place(view, x, insetTop + g.mediaTop + (g.mediaHeight - g.mediaButtonSize) / 2, g.mediaButtonSize, g.mediaButtonSize)
+            place(view, x, insetTop + modeRowTop + (modeRowHeight - modeSize) / 2, modeSize, modeSize)
         }
-        mode(shuffle, g.contentLeft, if (state.shuffle == true) "ic_nowplaying_shuffleon" else "ic_nowplaying_shuffle", state.canShuffle, state.shuffle == true)
-        mode(repeat, g.contentLeft + g.contentWidth - g.mediaButtonSize,
-            when (state.repeat) { 1 -> "ic_nowplaying_repeatoneon"; 2 -> "ic_nowplaying_repeaton"; else -> "ic_nowplaying_repeat" },
-            state.canRepeat, state.repeat != null && state.repeat != 0)
+        if (variant == SongColumnVariant.CENTERED) {
+            mode(shuffle, g.contentLeft, if (state.shuffle == true) "ic_nowplaying_shuffleon" else "ic_nowplaying_shuffle", state.canShuffle, state.shuffle == true)
+            mode(repeat, g.contentLeft + g.contentWidth - modeSize,
+                when (state.repeat) { 1 -> "ic_nowplaying_repeatoneon"; 2 -> "ic_nowplaying_repeaton"; else -> "ic_nowplaying_repeat" },
+                state.canRepeat, state.repeat != null && state.repeat != 0)
+        } else {
+            // Slot 0: shuffle, Slot 1: repeat; Slots 2 (favorite) & 3 (more) are native views in player_container
+            mode(shuffle, slotLeft(g, 0, 4, modeSize),
+                if (state.shuffle == true) "ic_nowplaying_shuffleon" else "ic_nowplaying_shuffle", state.canShuffle, state.shuffle == true)
+            mode(repeat, slotLeft(g, 1, 4, modeSize),
+                when (state.repeat) { 1 -> "ic_nowplaying_repeatoneon"; 2 -> "ic_nowplaying_repeaton"; else -> "ic_nowplaying_repeat" },
+                state.canRepeat, state.repeat != null && state.repeat != 0)
+        }
     }
     private fun imageMatrix(image: ImageView, size: Int): List<Float>? {
         val drawable = image.drawable ?: return null
@@ -644,6 +829,8 @@ internal class TabletSongColumnLayout(
                 set("emptyVisibility", { view.visibility }, { view.visibility = it }, View.INVISIBLE)
             else owned.remove("emptyVisibility")?.close()
         }
+        /** Toggle a pane's presence without touching its constraints; restored to the native value on close. */
+        fun visible(visibility: Int) = set("paneVisibility", { view.visibility }, { view.visibility = it }, visibility)
         fun progressThickness(height: Int) {
             val progress = view as? ProgressBar ?: return
             if (android.os.Build.VERSION.SDK_INT < 29) return
@@ -659,6 +846,13 @@ internal class TabletSongColumnLayout(
             val text = view as TextView
             set("textSize", { text.textSize }, { text.setTextSize(TypedValue.COMPLEX_UNIT_PX, it) }, sizePx)
             set("fontPadding", { text.includeFontPadding }, { text.includeFontPadding = it }, false); minimumHeight(0)
+        }
+        fun gravity(g: Int) {
+            val text = view as? TextView ?: return
+            set("textGravity", { text.gravity }, { text.gravity = it }, g)
+        }
+        fun clearBackground() {
+            set("viewBackground", { view.background }, { view.background = it }, null)
         }
         fun image(sizePx: Int) {
             val image = view as ImageView
@@ -677,6 +871,8 @@ internal class TabletSongColumnLayout(
         if (closed) return
         fullscreen(false)
         closed = true; volume.close(); player.removeView(overlay)
+        TranslationsPopupOffsetHook.customAnchorProvider = null
+        lyricsHost?.let { if (it.visibility == View.INVISIBLE) it.visibility = View.VISIBLE }
         states.values.toList().asReversed().forEach { it.close() }; states.clear(); columns.clear(); queueColumns.clear(); queueGradients.clear()
         current = null; currentQueue = null; frame = null
     }

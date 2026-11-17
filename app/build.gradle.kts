@@ -37,10 +37,23 @@ android {
         applicationId = "dev.amenhancer.module"
         minSdk = 26
         targetSdk = 37
-        versionCode = 119
-        versionName = "1.6.9"
+        versionCode = 120
+        versionName = "1.6.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Match :host-applemusic's layout dimension so each APK bakes in its dual-pane variant.
+    flavorDimensions += "layout"
+    productFlavors {
+        create("v1") {
+            dimension = "layout"
+            versionNameSuffix = "-v1"
+        }
+        create("v2") {
+            dimension = "layout"
+            versionNameSuffix = "-v2"
+        }
     }
 
     signingConfigs {
@@ -91,6 +104,7 @@ dependencies {
     testCompileOnly("io.github.libxposed:service:102.0.0")
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.10")
     implementation("androidx.activity:activity:1.13.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
     implementation("top.yukonga.miuix.kmp:miuix-preference:0.9.4")
     implementation("top.yukonga.miuix.kmp:miuix-nav:0.9.4")
     // HLE's exact Apple Music profile resolver uses DexKit only as a

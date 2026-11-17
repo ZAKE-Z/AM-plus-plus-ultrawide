@@ -11,6 +11,8 @@ internal class TabletLyricsPaneMotion(
     private val invalidate: () -> Unit,
     private val artwork: (() -> View?)? = null,
     private val contentSpan: (() -> Pair<Int, Int>?)? = null,
+    /** V2 keeps the left column anchored while the right pane swaps between lyrics and controls. */
+    private val centerWhenCollapsed: Boolean = true,
 ) : AutoCloseable {
     private val leftX = left.translationX
     private val rightX = right.translationX
@@ -56,12 +58,14 @@ internal class TabletLyricsPaneMotion(
     }
     private fun render() {
         val span = contentSpan?.invoke()
-        val offset = TabletComponentGeometry.centeredOffset(parent.width,
-            left.left + (span?.first ?: 0), span?.second ?: left.width) ?: 0f
+        val offset = if (centerWhenCollapsed)
+            TabletComponentGeometry.centeredOffset(parent.width,
+                left.left + (span?.first ?: 0), span?.second ?: left.width) ?: 0f
+        else 0f
         val centered = offset * fraction
         left.translationX = leftX + centered
-        right.translationX = rightX + right.width * .12f * fraction
-        compensateCover(centered)
+        right.translationX = rightX + (if (centerWhenCollapsed) right.width * .12f * fraction else 0f)
+        if (centerWhenCollapsed) compensateCover(centered) else prepareNativeCoverFrame()
         right.alpha = expansion * (1f - fraction)
         right.visibility = if (fraction >= .999f) View.INVISIBLE else View.VISIBLE
         right.importantForAccessibility = if (fraction <= .001f && expansion >= .6f)

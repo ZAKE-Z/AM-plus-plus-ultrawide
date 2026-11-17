@@ -6,6 +6,23 @@ import org.junit.Test
 
 class TabletArtworkLayoutPolicyTest {
     @Test
+    fun landscapeTypographyAndGeometryDoNotChangeWithDisplayDensity() {
+        for ((width, height) in listOf(1800 to 720, 2780 to 1264, 1280 to 800, 1920 to 1080)) {
+            val reference = requireNotNull(TabletArtworkLayoutPolicy.songColumn(width, height, 1f,
+                variant = SongColumnVariant.COVER_LEFT_SWITCHER))
+            for (density in listOf(0.75f, 1.5f, 2.75f, 4f)) {
+                assertEquals(reference, TabletArtworkLayoutPolicy.songColumn(width, height, density,
+                    variant = SongColumnVariant.COVER_LEFT_SWITCHER))
+            }
+            assertEquals(reference.coverLeft, reference.metadataLeft)
+            org.junit.Assert.assertTrue(kotlin.math.abs(reference.contentLeft + reference.contentWidth -
+                reference.metadataLeft - reference.metadataWidth) <= 1)
+            org.junit.Assert.assertTrue(reference.progressHeight - reference.progressTrackHeight -
+                reference.progressLabelGap >= reference.labelFontPx * 1.4f)
+        }
+    }
+
+    @Test
     fun miniRelayoutRetainsTheSameExpandedEndpointAndDoesNotSnapOnCompletion() {
         val expandedMargin = TabletArtworkLayoutPolicy.nativeTopMarginInPlayer(0f, 900f, 24f, 600f, 24f)
         assertEquals(138, expandedMargin)

@@ -3,7 +3,10 @@ package dev.amenhancer.module.hook
 /** Native host boundaries stay stable; songColumn independently positions the visible left content. */
 internal object TabletDualPaneLayoutPolicy {
     const val SONG_WIDTH_FRACTION = TabletArtworkLayoutPolicy.SONG_WIDTH_FRACTION
-    fun songColumnWidth(playerWidth: Int): Int = (playerWidth * SONG_WIDTH_FRACTION).toInt()
+    fun songWidthFraction(variant: SongColumnVariant = SongColumnVariant.CENTERED): Float =
+        TabletArtworkLayoutPolicy.songWidthFraction(variant)
+    fun songColumnWidth(playerWidth: Int, variant: SongColumnVariant = SongColumnVariant.CENTERED): Int =
+        (playerWidth * songWidthFraction(variant)).toInt()
 
     // Original host compensation, not the new visible cover/metadata inset.
     const val CONTENT_SIDE_INSET_DP = 50
@@ -15,4 +18,15 @@ internal object TabletDualPaneLayoutPolicy {
 
     fun songHostWidth(playerWidth: Int, hostSideMargin: Int, lyricsTextStartInset: Int): Int =
         (songColumnWidth(playerWidth) + lyricsTextStartInset - 2 * hostSideMargin).coerceAtLeast(1)
+
+    /**
+     * V2 hands the right pane to either lyrics or the relocated native controls, so the
+     * song host must span the full width underneath the lyrics pane for the controls to
+     * be visible and hit-testable there. V1 widens its song column to narrow the lyrics.
+     */
+    fun songHostWidth(playerWidth: Int, hostSideMargin: Int, lyricsTextStartInset: Int,
+        variant: SongColumnVariant): Int =
+        if (variant == SongColumnVariant.COVER_LEFT_SWITCHER)
+            (playerWidth - 2 * hostSideMargin).coerceAtLeast(1)
+        else (songColumnWidth(playerWidth, variant) + lyricsTextStartInset - 2 * hostSideMargin).coerceAtLeast(1)
 }

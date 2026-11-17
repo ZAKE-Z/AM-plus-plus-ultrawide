@@ -33,6 +33,7 @@ internal object DualPaneResourceHook {
             DualPaneShell.installImmediately(root)
         }
         hookTabletLandscapeLyricsSheet()
+        hookTabletLandscapeQueueSheet()
         TranslationsPopupOffsetHook.install()
         // The modified package changes `lyrics_line_text_size` only in its
         // w640dp resource table. Hook the two layouts that actually reference
@@ -48,6 +49,12 @@ internal object DualPaneResourceHook {
         }
     }
 
+    private fun hookTabletLandscapeQueueSheet() {
+        LayoutInflationRegistry.register("fragment_player_queue_sheet") { view ->
+            RightQueuePaneLayout.apply(view)
+        }
+    }
+
     private fun hookTabletLyricTextLayout(
         layoutName: String,
     ) {
@@ -58,10 +65,87 @@ internal object DualPaneResourceHook {
 }
 
 /**
- * Mirrors the modified layout-land/fragment_player_lyrics_sheet.xml exactly.
- * This callback is scoped to the dedicated lyrics layout, not the player
- * layout, so it never changes the left song/album-art pane.
+ * Cleans up fragment_player_queue_sheet when placed in the dedicated right pane:
+ * hides the redundant fixed current_player_item on top and the bottom 35% controls
+ * slot, stretching the queue list from top to bottom with zero cutoff.
  */
+internal object RightQueuePaneLayout {
+    private const val CURRENT_PLAYER_ITEM = "current_player_item"
+    private const val STICKY_HEADER_CLIP = "sticky_header_clip_container"
+    private const val ACTION_BUTTONS = "player_action_buttons"
+    private const val RECYCLER_VIEW_GRADIENTS = "recycler_view_gradients"
+    private const val CONTROLS = "controls"
+    private const val QUEUE_MAIN_CONTENT = "queue_main_content"
+
+    fun apply(root: View) {
+        val resources = root.resources
+        val gradients = root.findViewById<View>(targetId(resources, RECYCLER_VIEW_GRADIENTS)) ?: return
+        val rootParams = root.layoutParams as? ViewGroup.MarginLayoutParams
+        if (rootParams != null) {
+            rootParams.topMargin = 0
+            root.layoutParams = rootParams
+        }
+        // Hide fixed top history header and action buttons
+        hide(root, resources, CURRENT_PLAYER_ITEM)
+        hide(root, resources, STICKY_HEADER_CLIP)
+        hide(root, resources, ACTION_BUTTONS)
+        // Hide bottom controls placeholder (the 35% height cutoff)
+        hide(root, resources, CONTROLS)
+
+        // Stretch gradients to fill 100% height from top to bottom
+        ConstraintLayoutPane.anchorTopToParent(gradients, RECYCLER_VIEW_GRADIENTS)
+        val params = gradients.layoutParams
+        if (params != null) {
+            runCatching {
+                val b2b = ConstraintLayoutPane.constraintField(params.javaClass, "bottomToBottom")
+                b2b?.setInt(params, 0)
+                ConstraintLayoutPane.constraintField(params.javaClass, "bottomToTop")?.setInt(params, -1)
+                params.height = 0
+                gradients.layoutParams = params
+            }
+        }
+        gradients.background = null
+        root.background = null
+        (gradients as? ViewGroup)?.clipChildren = false
+        // Remove gradient mask on AlphaGradientFrameLayout if present
+        runCatching {
+            val dMethod = gradients.javaClass.getMethod("d", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            dMethod.invoke(gradients, 0, 0)
+        }
+        // Do not replace bottom-fade arrays: the native history animator captures
+        // them and indexes them using its own (longer) transition arrays.
+        // Host RecyclerView is loaded by Apple's classloader, not the module's
+        // AndroidX classloader. Use framework types or this cleanup is skipped.
+        (root.findViewById<View>(targetId(resources, QUEUE_MAIN_CONTENT)) as? ViewGroup)?.let { rv ->
+            rv.setPadding(rv.paddingLeft, 0, rv.paddingRight, 0)
+            rv.clipToPadding = false
+            rv.background = null
+            val historyIds = listOf("history_item_container", "history_item_padding_top",
+                "history_item_padding_bottom", "header_history_container")
+                .map { resources.getIdentifier(it, "id", ModuleConstants.TARGET_PACKAGE) }
+                .filter { it != 0 }.toSet()
+            fun clearHistoryBackground(view: View) {
+                if (view.id in historyIds && view.background != null) view.background = null
+                if (view is ViewGroup) for (index in 0 until view.childCount) {
+                    clearHistoryBackground(view.getChildAt(index))
+                }
+            }
+            // Runs before drawing, including newly attached/recycled history rows.
+            clearHistoryBackground(rv)
+        }
+        root.requestLayout()
+    }
+
+    private fun targetId(resources: android.content.res.Resources, name: String): Int =
+        resources.getIdentifier(name, "id", ModuleConstants.TARGET_PACKAGE)
+            .takeIf { it != 0 }
+            ?: error("id/$name resource ID was unavailable")
+
+    private fun hide(root: View, resources: android.content.res.Resources, name: String) {
+        val id = resources.getIdentifier(name, "id", ModuleConstants.TARGET_PACKAGE)
+        if (id != 0) root.findViewById<View>(id)?.visibility = View.GONE
+    }
+}
 internal object RightLyricsPaneLayout {
     private const val CURRENT_PLAYER_ITEM = "current_player_item"
     private const val RECYCLER_VIEW_GRADIENTS = "recycler_view_gradients"
@@ -216,6 +300,10 @@ internal object TranslationsPopupOffsetHook {
     @Volatile
     private var lastDebugUptime = 0L
 
+    /** Injected from the song column so the popup anchors to the middle translation button. */
+    @Volatile
+    var customAnchorProvider: (() -> View?)? = null
+
     /**
      * Idempotent: DualPaneResourceHook.install may run more than once, and a
      * framework hook failure must never take dual-pane down with it.
@@ -235,6 +323,17 @@ internal object TranslationsPopupOffsetHook {
                     shiftTranslationsPopupOffset(param)
                 }
             })
+            val popupClass = android.widget.PopupWindow::class.java
+            listOfNotNull(
+                runCatching { popupClass.getDeclaredMethod("showAsDropDown", View::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType) }.getOrNull(),
+                runCatching { popupClass.getDeclaredMethod("showAsDropDown", View::class.java) }.getOrNull(),
+            ).forEach { method ->
+                ModernXposedRuntime.hookMethod(method, object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: XC_MethodHook.MethodHookParam) {
+                        shiftTranslationsPopupOffset(param)
+                    }
+                })
+            }
             dualPaneDebug("translations popup offset hook installed")
         }.onFailure {
             dualPaneDebug("translations popup offset hook registration failed: $it")
@@ -243,21 +342,23 @@ internal object TranslationsPopupOffsetHook {
 
     private fun shiftTranslationsPopupOffset(param: XC_MethodHook.MethodHookParam) {
         val popup = param.thisObject as? android.widget.PopupWindow ?: return
-        val anchor = param.args.firstOrNull() as? View ?: return
+        var anchor = param.args.firstOrNull() as? View ?: return
         if (!TabletModeQualifier.isEligible(anchor.context)) return
+        val custom = customAnchorProvider?.invoke()?.takeIf { it.isShown }
+        if (custom != null) {
+            // Anchor popup right above our middle translation button
+            param.args[0] = custom
+            anchor = custom
+        }
         val resources = anchor.resources
         val popupMenuId = resources.getIdentifier(
             TRANSLATIONS_POPUP_MENU,
             "id",
             ModuleConstants.TARGET_PACKAGE,
-        ).takeIf { it != 0 } ?: run {
-            sparseDebug("translations popup offset skipped: id/translations_popup_menu missing")
-            return
-        }
+        ).takeIf { it != 0 } ?: return
         val contentView = runCatching { popup.contentView }.getOrNull() ?: return
         if (contentView.id != popupMenuId) return
-        if (findLyricsSheetRoot(anchor, resources) == null) {
-            sparseDebug("translations popup offset skipped: lyrics sheet ancestor missing")
+        if (custom == null && findLyricsSheetRoot(anchor, resources) == null) {
             return
         }
         val measureResult = runCatching {
@@ -278,15 +379,20 @@ internal object TranslationsPopupOffsetHook {
             )
             return
         }
-        val originalYOffset = param.args[2] as? Int ?: return
-        val overlapAnchor = runCatching { popup.overlapAnchor }.getOrDefault(false)
-        val shiftAmount = popupHeight + if (overlapAnchor) 0 else anchor.height
-        val shiftedYOffset = originalYOffset - shiftAmount
-        param.args[2] = shiftedYOffset
-        sparseDebug(
-            "translations popup yOffset shifted from " + originalYOffset + " to " + shiftedYOffset +
-                " popupHeight=" + popupHeight + " anchorHeight=" + anchor.height,
-        )
+        val originalYOffset = param.args.getOrNull(2) as? Int ?: 0
+        if (custom != null) {
+            // Anchor popup right beside/above the middle translation button without excessive negative shift
+            val density = anchor.resources.displayMetrics.density
+            if (param.args.size >= 3) {
+                // Place popup directly above the translation button with 4dp margin
+                param.args[2] = -(popupHeight + (4 * density).toInt())
+            }
+        } else {
+            val overlapAnchor = runCatching { popup.overlapAnchor }.getOrDefault(false)
+            val shiftAmount = popupHeight + if (overlapAnchor) 0 else anchor.height + (8 * anchor.resources.displayMetrics.density).toInt()
+            val shiftedYOffset = originalYOffset - shiftAmount
+            if (param.args.size >= 3) param.args[2] = shiftedYOffset
+        }
     }
 
     /**
@@ -320,4 +426,3 @@ internal object TranslationsPopupOffsetHook {
         dualPaneDebug(message)
     }
 }
-

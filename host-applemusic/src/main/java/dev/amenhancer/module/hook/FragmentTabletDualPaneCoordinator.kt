@@ -86,10 +86,14 @@ internal object FragmentTabletDualPaneCoordinator {
                 val session = sessions[owner] ?: return
                 if (!session.installed || !eligible(session.root.context)) return
                 val requested = (param.args[0] as? Enum<*>)?.name ?: return
-                // Match the established dual-pane player: only lyrics are fixed on the right.
-                // SONG/QUEUE retain Apple's state, shared-element transitions and left controls.
-                if (!FragmentTabletArtworkPolicy.keepsDedicatedLyrics(requested)) return
+                // Only lyrics are fixed on the right for the three-column layout. In the
+                // switcher variant the playlist also lives there, so QUEUE is routed to the
+                // right pane instead of replacing the song column.
+                val dedicatedLyrics = FragmentTabletArtworkPolicy.keepsDedicatedLyrics(requested)
+                val switcherQueue = DualPaneLayoutVariant.switcher && requested == "QUEUE"
+                if (!dedicatedLyrics && !switcherQueue) return
                 param.result = null
+                guarded(owner) { session.onPaneSelection(requested) }
             }
         })
         hook(native.resume, object : ModernMethodHook() {

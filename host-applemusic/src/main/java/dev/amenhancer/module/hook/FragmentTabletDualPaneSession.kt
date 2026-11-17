@@ -63,6 +63,25 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
     private val hidden = IdentityHashMap<View, Int>()
     private val margins = IdentityHashMap<View, Int>()
     private var cover: View? = null
+    private val fixedCoverScales = java.util.IdentityHashMap<View, Pair<Float, Float>>()
+
+    private fun keepExpandedCoverSize(enabled: Boolean) {
+        if (!enabled) {
+            fixedCoverScales.forEach { (view, scale) ->
+                view.scaleX = scale.first
+                view.scaleY = scale.second
+            }
+            fixedCoverScales.clear()
+            return
+        }
+        val view = nativeCoverGetter.invoke(null, controller) as? View ?: return
+        val previous = fixedCoverScales[view] ?: (view.scaleX to view.scaleY)
+        // Preserve the latest native pause scale for returning to the native player.
+        fixedCoverScales[view] = (if (view.scaleX != 1f) view.scaleX else previous.first) to
+            (if (view.scaleY != 1f) view.scaleY else previous.second)
+        view.scaleX = 1f
+        view.scaleY = 1f
+    }
     private val nativeCallback = checkNotNull(native.callback.get(controller))
     private val nativeCoverGetter = native.nativeCover
     private val behaviorField = native.behavior
@@ -89,10 +108,15 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
     private var controlsDensity = 0f
     private var controlsInsets: android.view.WindowInsets? = null
     private var lyricsExpanded = true
+    private var rightPaneShowsQueue = false
+    private var rightPaneSwapBusy = false
+    private fun rightShowsLyrics(): Boolean =
+        if (DualPaneLayoutVariant.switcher) songColumn?.rightPaneIsQueue != true else lyricsExpanded
     private val paneMotion = TabletLyricsPaneMotion(wrapper, songHost, right,
         invalidate = { root.postInvalidateOnAnimation() },
         artwork = { nativeCoverGetter.invoke(null, controller) as? View },
-        contentSpan = { components?.restingContentSpan() ?: progressContent.restingSpan(songHost) })
+        contentSpan = { components?.restingContentSpan() ?: progressContent.restingSpan(songHost) },
+        centerWhenCollapsed = !DualPaneLayoutVariant.switcher)
     private val artworkLayoutBounds = Rect()
     private val coordinatorLocation = IntArray(2)
     private val rootLocation = IntArray(2)
@@ -173,21 +197,22 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
         val density = root.resources.displayMetrics.density
         val sideGap = (TabletDualPaneLayoutPolicy.SONG_HOST_SIDE_MARGIN_DP * density).toInt()
         val lyricsInset = (TabletDualPaneLayoutPolicy.LYRICS_TEXT_START_INSET_DP * density).toInt()
-        val songWidth = if (dualPane) TabletDualPaneLayoutPolicy.songHostWidth(width, sideGap, lyricsInset)
+        val songWidth = if (dualPane)
+            TabletDualPaneLayoutPolicy.songHostWidth(width, sideGap, lyricsInset, DualPaneLayoutVariant.current)
             else (width - 2 * sideGap).coerceAtLeast(1)
         val rightGap = (16 * density).toInt()
         setPaneLayout(songHost, songWidth, sideGap, -1)
         // Android restores the saved right Fragment before the queued removal commits.
         // Keep a real viewport during that hand-off instead of collapsing it to 1px.
-        setPaneLayout(right, FragmentDualPanePolicy.rightPaneWidth(width, dualPane, rightGap), rightGap, Gravity.RIGHT)
+        setPaneLayout(right, FragmentDualPanePolicy.rightPaneWidth(width, dualPane, rightGap, DualPaneLayoutVariant.current), rightGap, Gravity.RIGHT)
     }
 
-    private fun setPaneLayout(view: View, width: Int, gap: Int, gravity: Int) {
+    private fun setPaneLayout(view: View, width: Int, gap: Int, gravity: Int, rightGap: Int = gap) {
         val current = view.layoutParams as? FrameLayout.LayoutParams
         if (current?.width == width && current.height == ViewGroup.LayoutParams.MATCH_PARENT &&
-            current.leftMargin == gap && current.rightMargin == gap && current.gravity == gravity) return
+            current.leftMargin == gap && current.rightMargin == rightGap && current.gravity == gravity) return
         view.layoutParams = FrameLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT, gravity).apply {
-            leftMargin = gap; rightMargin = gap
+            leftMargin = gap; rightMargin = rightGap
         }
     }
 
@@ -207,11 +232,15 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
         if (destroyed || !installed || closing) return true
         try {
             if (!FragmentTabletDualPaneCoordinator.eligible(root.context)) {
+                keepExpandedCoverSize(false)
                 songColumn?.fullscreen(false)
                 root.post { restore() }
                 return true
             }
             suppressHostBottomDivider()
+            keepExpandedCoverSize(slide >= .999f)
+            // Do not replace ancestor outlines or enable hardware clipping here.
+            // Keep the native cover/background compositor intact (see 1b9ae13).
             if (artworkLayoutPending) {
                 if (artworkContainer?.isLayoutRequested == true) {
                     root.requestLayout(); root.postInvalidateOnAnimation()
@@ -225,11 +254,25 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
             val child = if (right.childCount > 0) right.getChildAt(0) else null
             if (rightRoot !== child) {
                 rightRoot = child
-                chrome = listOf("current_player_item", "controls", "controls_tap_target").mapNotNull { find(right, it) }
+                chrome = listOf(
+                    "current_player_item",
+                    "controls",
+                    "controls_tap_target",
+                    "player_controls",
+                    "player_container",
+                ).mapNotNull { find(right, it) }
             }
             for (view in chrome) view.let {
                 hidden.putIfAbsent(it, it.visibility)
                 if (it.visibility != View.GONE) it.visibility = View.GONE
+            }
+            // Hide translations button in right pane so it doesn't duplicate with the switcher
+            find(right, "translations_button")?.let {
+                if (it.visibility != View.INVISIBLE) it.visibility = View.INVISIBLE
+            }
+            // Clean up queue pane whenever shown on the right
+            if (right.childCount > 0 && rightPaneShowsQueue) {
+                RightQueuePaneLayout.apply(right.getChildAt(0))
             }
             if (right.childCount > 0) right.getChildAt(0).let { child ->
                 (child.layoutParams as? ViewGroup.MarginLayoutParams)?.let { params ->
@@ -237,8 +280,14 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
                     if (params.topMargin != 0) { params.topMargin = 0; child.layoutParams = params }
                 }
             }
+            // Ensure bottom mini-player is completely hidden when the full player is expanded
+            find(root, "mini_player")?.let { mini ->
+                if (slide >= 0.99f && mini.visibility != View.GONE) mini.visibility = View.GONE
+                else if (slide < 0.01f && mini.visibility != View.VISIBLE) mini.visibility = View.VISIBLE
+            }
             applyTransition()
             wrapper.z = songHost.z
+            syncRightPaneFragment()
             if (!componentsFailed && prepareControlsIfNeeded()) {
                 root.requestLayout(); root.postInvalidateOnAnimation()
                 return false
@@ -253,6 +302,16 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
                 return false
             }
             applyPanePresentation()
+            // Shift right pane (both lyrics and queue) uniformly by 28dp so the gap from
+            // lyrics' first word to the progress bar matches the cover-to-progress gap.
+            // Both panes share the exact same X position, completely eliminating any jumping or flashing during switch.
+            if (slide >= 0.95f && DualPaneLayoutVariant.switcher) {
+                val density = root.resources.displayMetrics.density
+                val shiftPx = (28f * density)
+                if (right.translationX != -shiftPx) right.translationX = -shiftPx
+            } else if (DualPaneLayoutVariant.switcher && slide < 0.05f) {
+                if (right.translationX != 0f) right.translationX = 0f
+            }
             if (!componentsFailed) runCatching {
                 ensureComponents()
                 components?.update(slide, switchingField.getBoolean(controller) || transitionField.getBoolean(controller))
@@ -310,6 +369,12 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
 
     private fun toggleLyrics() {
         if (components?.lyricsAvailable() == false) return
+        if (DualPaneLayoutVariant.switcher) {
+            // V2: the bottom switch row swaps the right pane between lyrics and playlist.
+            songColumn?.setRightPaneQueue(songColumn?.rightPaneIsQueue == false)
+            root.invalidate()
+            return
+        }
         if ((paneField.get(controller) as? Enum<*>)?.name == "SONG") lyricsExpanded = !lyricsExpanded
         else {
             lyricsExpanded = true
@@ -319,13 +384,43 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
         root.invalidate()
     }
 
+    /** Native pane selection routed through the switch row: QUEUE fills the right pane in V2. */
+    fun onPaneSelection(requested: String) {
+        if (!installed || destroyed || closing) return
+        songColumn?.setRightPaneQueue(requested == "QUEUE")
+    }
+
     private fun applyPanePresentation(animate: Boolean = false) {
         val pane = (paneField.get(controller) as? Enum<*>)?.name
         // SONG and QUEUE share this host, including their native shared-element transition.
         // Keep its presentation offset; the native artwork/child geometry stays native.
-        paneMotion.apply(!lyricsExpanded, pane, slide,
+        // V2 never collapses the right pane: it swaps lyrics for the playlist instead.
+        val collapsed = if (DualPaneLayoutVariant.switcher) false else !lyricsExpanded
+        paneMotion.apply(collapsed, pane, slide,
             FragmentPlayerSurfaceMotion.tabletFrame(slide).expansion, animate,
             available = components?.lyricsAvailable() != false)
+    }
+
+    /** V2: keep the right host's fragment in sync with the switch row (lyrics or playlist). */
+    private fun syncRightPaneFragment() {
+        if (!DualPaneLayoutVariant.switcher || destroyed || closing || pending || saved()) return
+        if (rightPaneSwapBusy) return
+        val wantQueue = songColumn?.rightPaneIsQueue == true
+        if (wantQueue == rightPaneShowsQueue) return
+        val name = if (wantQueue) "QUEUE" else "LYRICS"
+        val target = fragment(name) ?: fragmentAccessor.invoke(states.getValue(name)) ?: return
+        val tx = transaction()
+        for (other in listOf("LYRICS", "QUEUE")) fragment(other)?.takeIf {
+            native.fragmentId.invoke(it) == right.id
+        }?.let { native.remove.invoke(tx, it) }
+        native.replace.invoke(tx, right.id, target, tag(name))
+        rightPaneShowsQueue = wantQueue
+        rightPaneSwapBusy = true
+        commit(tx) {
+            rightPaneSwapBusy = false
+            native.refresh.invoke(controller)
+            root.invalidate()
+        }
     }
 
     private fun ensureComponents() {
@@ -336,13 +431,25 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
                 .onFailure { ModernXposedRuntime.log("Tablet playback-mode contract unavailable; retaining native mode actions", it) }
                 .getOrNull() else null
             songColumn = TabletSongColumnLayout(player, songHost,
-                { TabletSongColumnLayout.collapsePlayer(player) }, modes)
+                { TabletSongColumnLayout.collapsePlayer(player) }, modes,
+                variant = DualPaneLayoutVariant.current,
+                onRightPaneChanged = {
+                    root.postInvalidateOnAnimation()
+                },
+                isTranslationActive = {
+                    find(right, "translations_button")?.isSelected == true
+                },
+                onTranslateClick = {
+                    find(right, "translations_button")?.performClick()
+                    root.postInvalidateOnAnimation()
+                })
         }
         if (components == null) components = TabletPlayerComponents(root, songHost, right,
             { (paneField.get(controller) as? Enum<*>)?.name == "SONG" },
-            { lyricsExpanded && components?.lyricsAvailable() != false }, ::toggleLyrics,
+            { rightShowsLyrics() && components?.lyricsAvailable() != false }, ::toggleLyrics,
             currentLyricsAvailability = { nativeLyricsAvailability.available() },
-            referenceControls = { songColumn?.readyForPane((paneField.get(controller) as? Enum<*>)?.name == "SONG") == true })
+            referenceControls = { songColumn?.readyForPane((paneField.get(controller) as? Enum<*>)?.name == "SONG") == true },
+            showPaneButtons = !DualPaneLayoutVariant.switcher)
     }
 
     fun prepareComponents(pane: View, fragment: Any? = null): Boolean {
@@ -502,7 +609,9 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
         // geometry cancels the inset for mapping back into player layout space.
         val topMargin = column.topInset + layout.coverTop - parentTop
         val parentLeft = column.origin(artworkParent).first
-        val left = layout.contentLeft - parentLeft
+        // The cover-left variants place the cover at the column's inner-left edge;
+        // never hand the native constraints a negative start margin.
+        val left = (layout.coverLeft - parentLeft).coerceAtLeast(0)
         // Native i.d uses layout rectangles, which exclude ancestor translations. Put the
         // resting cover position in its constraints so the native mini endpoint includes it.
         val lease = artworkLease ?: ConstraintLayoutPane.artworkLayoutLease(artwork).also { artworkLease = it }
@@ -579,6 +688,8 @@ internal class FragmentTabletDualPaneSession(val controller: Any, val root: View
     }
 
     private fun restoreDecorations() {
+        keepExpandedCoverSize(false)
+        right.translationX = 0f
         bottomDividerVisibility?.close()
         songColumn?.close(); songColumn = null
         components?.close(); components = null

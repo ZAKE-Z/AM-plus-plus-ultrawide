@@ -134,8 +134,12 @@ internal object TabletLyricTypography {
             metrics,
         )
         fun visit(view: View) {
-            if (view is TextView && view.id in primaryLyricTextIds && abs(view.textSize - targetSizePx) > 0.5f) {
-                view.setTextSize(TypedValue.COMPLEX_UNIT_SP, targetSizeSp)
+            if (view is TextView && view.id in primaryLyricTextIds) {
+                if (abs(view.textSize - targetSizePx) > 0.5f) {
+                    view.setTextSize(TypedValue.COMPLEX_UNIT_SP, targetSizeSp)
+                }
+                view.gravity = android.view.Gravity.CENTER_HORIZONTAL
+                view.textAlignment = View.TEXT_ALIGNMENT_CENTER
             }
             (view as? ViewGroup)?.let { parent ->
                 repeat(parent.childCount) { childIndex -> visit(parent.getChildAt(childIndex)) }

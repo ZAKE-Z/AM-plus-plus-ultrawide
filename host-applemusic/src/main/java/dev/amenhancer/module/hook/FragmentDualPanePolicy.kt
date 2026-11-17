@@ -10,8 +10,9 @@ internal object FragmentDualPanePolicy {
         officialTablet && landscape && setting
 
     /** Portrait keeps a measurable saved lyrics host only until its removal commits. */
-    fun rightPaneWidth(playerWidth: Int, dualPane: Boolean, sideGap: Int): Int =
-        ((if (dualPane) playerWidth - TabletDualPaneLayoutPolicy.songColumnWidth(playerWidth) else playerWidth) - 2 * sideGap).coerceAtLeast(1)
+    fun rightPaneWidth(playerWidth: Int, dualPane: Boolean, sideGap: Int,
+        variant: SongColumnVariant = SongColumnVariant.CENTERED): Int =
+        ((if (dualPane) playerWidth - TabletDualPaneLayoutPolicy.songColumnWidth(playerWidth, variant) else playerWidth) - 2 * sideGap).coerceAtLeast(1)
 
     fun initialLeftState(current: String?): String = when (current) {
         "SONG", "QUEUE" -> current

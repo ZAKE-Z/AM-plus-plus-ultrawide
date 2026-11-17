@@ -3,6 +3,20 @@ android {
     namespace = "dev.amenhancer.host.applemusic"
     compileSdk = 37
     defaultConfig { minSdk = 26 }
+    buildFeatures { buildConfig = true }
+    // Two dual-pane arrangements ship as separate APKs: v1 keeps lyrics on the right
+    // with the cover on the far left; v2 adds the middle lyrics/controls switcher.
+    flavorDimensions += "layout"
+    productFlavors {
+        create("v1") {
+            dimension = "layout"
+            buildConfigField("int", "DUAL_PANE_VARIANT", "1")
+        }
+        create("v2") {
+            dimension = "layout"
+            buildConfigField("int", "DUAL_PANE_VARIANT", "2")
+        }
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     testOptions {
         unitTests.all {

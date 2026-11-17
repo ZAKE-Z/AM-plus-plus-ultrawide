@@ -290,7 +290,7 @@ internal object ConstraintLayoutPane {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply {
                 setInt("orientation", 1)
-                setFloat("guidePercent", TabletDualPaneLayoutPolicy.SONG_WIDTH_FRACTION)
+                setFloat("guidePercent", TabletDualPaneLayoutPolicy.songWidthFraction(DualPaneLayoutVariant.current))
             },
         )
 
@@ -329,7 +329,7 @@ internal object ConstraintLayoutPane {
             },
         )
 
-        val artworkLayoutReapply = installTabletArtworkLayout(playerRoot, playerHost)
+        val artworkLayoutReapply = installTabletArtworkLayout(playerRoot, playerHost, lyricsHost)
         return DualPaneState(root, playerHost, lyricsHost, artworkLayoutReapply)
     }
 
@@ -337,6 +337,7 @@ internal object ConstraintLayoutPane {
     private fun installTabletArtworkLayout(
         playerRoot: ViewGroup,
         playerHost: View,
+        lyricsHost: View? = null,
     ): (() -> Unit)? {
         val resources = playerRoot.resources
         val artworkId = playerRoot.resources.getIdentifier(
@@ -372,7 +373,11 @@ internal object ConstraintLayoutPane {
                 return true
             }
             val column = songColumn ?: TabletSongColumnLayout(playerRoot, playerHost as ViewGroup,
-                { TabletSongColumnLayout.collapsePlayer(playerRoot) }, keepNativeFooter = true).also { songColumn = it }
+                { TabletSongColumnLayout.collapsePlayer(playerRoot) }, keepNativeFooter = true,
+                // The legacy player keeps lyrics fixed on the right; only the 7.0 fragment
+                // route can host the playlist switcher, so the legacy layout stays V1-shaped.
+                variant = SongColumnVariant.COVER_LEFT,
+                lyricsHost = lyricsHost).also { songColumn = it }
             val statusBarInsetTopPx = playerRoot.rootWindowInsets?.systemWindowInsetTop
                 ?: playerRoot.resources.getIdentifier("status_bar_height", "dimen", "android")
                     .takeIf { it != 0 }
@@ -393,7 +398,9 @@ internal object ConstraintLayoutPane {
             if (constraintField(params.javaClass, "startToStart") == null) return true
             val sizePx = layout.coverSize
             val at = column.origin(parent)
-            val left = layout.contentLeft - at.first
+            // Clamp to the column's inner-left edge: the cover-left variants resolve
+            // a player-space 0 there, which would otherwise become a negative margin.
+            val left = (layout.coverLeft - at.first).coerceAtLeast(0)
             artworkLayoutChanged = layoutLeases.getOrPut(artwork) { artworkLayoutLease(artwork) }.apply(sizePx,
                 topInset + layout.coverTop - at.second, left, parent.width - left - sizePx) || columnChanged
             val visibleBounds = android.graphics.Rect()
@@ -779,7 +786,8 @@ internal object ConstraintLayoutPane {
         var pendingLayout = false
         fun apply(): Boolean {
             if (playerRoot.width <= 0 || !TabletModeQualifier.isEligible(playerRoot.context)) return false
-            val width = TabletDualPaneLayoutPolicy.songHostWidth(playerRoot.width, sideGap, lyricsInset)
+            val width = TabletDualPaneLayoutPolicy.songHostWidth(playerRoot.width, sideGap, lyricsInset,
+                DualPaneLayoutVariant.current)
             val params = playerHost.layoutParams
             if (params.width == width) return false
             params.width = width

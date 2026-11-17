@@ -19,6 +19,8 @@ internal class TabletPlayerComponents(
     private val lyricsExpanded: () -> Boolean, private val lyricsClick: () -> Unit,
     private val currentLyricsAvailability: (() -> Boolean?)? = null,
     private val referenceControls: () -> Boolean = { false },
+    /** V2 moves the pane switch into the controls column, so the floating pair hides. */
+    private val showPaneButtons: Boolean = true,
 ) : AutoCloseable {
     private val overlay = FrameLayout(root.context).apply { clipChildren = false; clipToPadding = false }
     private val rows = TabletNativeControlRows()
@@ -91,6 +93,9 @@ internal class TabletPlayerComponents(
     }
     private fun controls(): ViewGroup? = groups(songHost).filter { it.isShown && it.height > 0 }
         .maxByOrNull(::alpha)
+        // The switcher variant hides the song column's controls while lyrics own the
+        // right pane; keep the footer buttons on the last laid-out group all the same.
+        ?: groups(songHost).firstOrNull { it.height > 0 }
     fun restingContentSpan(): Pair<Int, Int>? {
         val group = controls() ?: return null
         val progress = progressContent.resolve(group, requireShown = true) ?: return null
@@ -222,7 +227,7 @@ internal class TabletPlayerComponents(
             return
         }
         val progress = listOf("seek_bar_controls", "live_radio_container").mapNotNull { find(group, it) }
-            .firstOrNull { it.isShown && it.height > 0 } ?: return
+            .firstOrNull { it.height > 0 } ?: return
         root.getLocationInWindow(origin)
         val column = location(group)
         // Keep the right actions at their current 44dp / 12dp-from-bottom positions.
@@ -251,7 +256,11 @@ internal class TabletPlayerComponents(
         actionStyle.bind(lyrics, nativeLyrics as? ImageView)
         actionStyle.bind(queue, nativeQueue as? ImageView)
         lyrics.isSelected = lyricsExpanded(); queue.isSelected = !songVisible()
-        if (pairFits) {
+        if (!showPaneButtons) {
+            // V2 controls the pane from the in-column switch row.
+            lyrics.visibility = View.INVISIBLE
+            queue.visibility = View.INVISIBLE
+        } else if (pairFits) {
             place(lyrics, lyricsLeft, footerTop, size, size); place(queue, queueLeft, footerTop, size, size)
         } else {
             val a = location(nativeLyrics); val b = location(nativeQueue)
