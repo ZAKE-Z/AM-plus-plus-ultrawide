@@ -3,6 +3,7 @@ package dev.amenhancer.module.config
 import dev.amenhancer.module.model.EnhancementDefaults
 import dev.amenhancer.module.ModuleConstants
 import dev.amenhancer.module.model.CustomLyricsManifest
+import dev.amenhancer.module.model.CustomLyricsSources
 import dev.amenhancer.module.model.LyricsFontManifest
 import dev.amenhancer.module.model.LlmLyricsThinkingEffort
 import dev.amenhancer.module.model.LlmLyricsThinkingFormat
@@ -10,7 +11,7 @@ import dev.amenhancer.module.model.ModuleSettings
 
 object ModuleSettingsSchema {
     /** Keys removed by the profile migration. */
-    val obsoleteKeys: Set<String> = setOf(KEY_TITLE_CORRECTION_TARGET_LANGUAGE)
+    val obsoleteKeys: Set<String> = setOf(KEY_TITLE_CORRECTION_TARGET_LANGUAGE, KEY_AUTOMATIC_LYRICS_PREFER_NATIVE)
 
     fun decode(values: Map<String, *>): ModuleSettings = decode(values, values.customLyricsManifest())
 
@@ -27,6 +28,10 @@ object ModuleSettingsSchema {
         phoneLiquidGlassEnabled = values.boolean(
             KEY_PHONE_LIQUID_GLASS,
             default = false,
+        ),
+        glassAdaptiveForegroundEnabled = values.boolean(
+            KEY_GLASS_ADAPTIVE_FOREGROUND,
+            default = true,
         ),
         phoneLiquidGlassBottomGapDp = values.number(KEY_PHONE_LIQUID_GLASS_BOTTOM_GAP_DP)
             ?.coerceIn(
@@ -101,7 +106,6 @@ object ModuleSettingsSchema {
             default = values.boolean(KEY_LEGACY_ONLINE_LYRIC_REPLACEMENT, default = false),
         ),
         automaticLyricsEnabled = values.boolean(KEY_AUTOMATIC_LYRICS_ENABLED, default = true),
-        automaticLyricsPreferNative = values.boolean(KEY_AUTOMATIC_LYRICS_PREFER_NATIVE, default = true),
         automaticLyricsSourceOrder = values.automaticLyricsSourceOrder(),
         llmLyricsEnabled = values.boolean(KEY_LLM_LYRICS_ENABLED, default = false),
         llmLyricsTransliterationEnabled = values.boolean(
@@ -111,6 +115,7 @@ object ModuleSettingsSchema {
         llmLyricsBaseUrl = ModuleSettings.normalizeLlmLyricsBaseUrl(values.string(KEY_LLM_LYRICS_BASE_URL)),
         llmLyricsApiKey = ModuleSettings.normalizeLlmLyricsApiKey(values.string(KEY_LLM_LYRICS_API_KEY)),
         llmLyricsModel = ModuleSettings.normalizeLlmLyricsModel(values.string(KEY_LLM_LYRICS_MODEL)),
+        llmLyricsCustomHeaders = ModuleSettings.normalizeLlmLyricsCustomHeaders(values.string(KEY_LLM_LYRICS_CUSTOM_HEADERS)),
         llmLyricsThinkingEnabled = values.boolean(KEY_LLM_LYRICS_THINKING_ENABLED, default = false),
         llmLyricsThinkingFormat = values.llmLyricsThinkingFormat(),
         llmLyricsThinkingEffort = LlmLyricsThinkingEffort.decode(values.string(KEY_LLM_LYRICS_THINKING_EFFORT)),
@@ -137,6 +142,7 @@ object ModuleSettingsSchema {
             KEY_DUAL_PANE_HIDE_STATUS_BAR to settings.dualPaneHideStatusBarEnabled,
             KEY_DISABLE_EDITORIAL_VIDEO_ON_TABLET to settings.disableEditorialVideoOnTablet,
             KEY_PHONE_LIQUID_GLASS to settings.phoneLiquidGlassEnabled,
+            KEY_GLASS_ADAPTIVE_FOREGROUND to settings.glassAdaptiveForegroundEnabled,
             KEY_PHONE_LIQUID_GLASS_BOTTOM_GAP_DP to
                 ModuleSettings.normalizePhoneLiquidGlassBottomGapDp(
                     settings.phoneLiquidGlassBottomGapDp,
@@ -181,10 +187,6 @@ object ModuleSettingsSchema {
             KEY_TITLE_CORRECTION_MODE to settings.titleCorrectionMode.storageValue,
             KEY_CUSTOM_LYRICS_ENABLED to settings.customLyricsEnabled,
             KEY_AUTOMATIC_LYRICS_ENABLED to settings.automaticLyricsEnabled,
-            KEY_AUTOMATIC_LYRICS_PREFER_NATIVE to settings.automaticLyricsPreferNative,
-            KEY_AUTOMATIC_LYRICS_SOURCE_ORDER to
-                ModuleSettings.normalizeAutomaticLyricsSourceOrder(settings.automaticLyricsSourceOrder)
-                    .joinToString(","),
             KEY_LLM_LYRICS_ENABLED to settings.llmLyricsEnabled,
             KEY_LLM_LYRICS_TRANSLITERATION_ENABLED to settings.llmLyricsTransliterationEnabled,
             KEY_LLM_LYRICS_BASE_URL to
@@ -193,13 +195,23 @@ object ModuleSettingsSchema {
                 ModuleSettings.normalizeLlmLyricsApiKey(settings.llmLyricsApiKey),
             KEY_LLM_LYRICS_MODEL to
                 ModuleSettings.normalizeLlmLyricsModel(settings.llmLyricsModel),
+            KEY_LLM_LYRICS_CUSTOM_HEADERS to
+                ModuleSettings.normalizeLlmLyricsCustomHeaders(settings.llmLyricsCustomHeaders),
             KEY_LLM_LYRICS_THINKING_ENABLED to settings.llmLyricsThinkingEnabled,
             KEY_LLM_LYRICS_THINKING_FORMAT to settings.llmLyricsThinkingFormat.storageValue,
             KEY_LLM_LYRICS_THINKING_EFFORT to settings.llmLyricsThinkingEffort.storageValue,
         )
-        values[KEY_SCHEMA_VERSION] = ModuleConstants.CONFIG_SCHEMA_VERSION
+        values.putAll(encodeAutomaticLyricsSourceOrder(settings.automaticLyricsSourceOrder))
         return values
     }
+
+    fun encodeAutomaticLyricsSourceOrder(order: List<String>): Map<String, Any> = mapOf(
+        KEY_AUTOMATIC_LYRICS_SOURCE_ORDER to ModuleSettings.normalizeAutomaticLyricsSourceOrder(order).joinToString(","),
+        KEY_SCHEMA_VERSION to ModuleConstants.CONFIG_SCHEMA_VERSION,
+    )
+
+    fun encodeAutomaticLyricsEnabled(enabled: Boolean): Map<String, Any> =
+        mapOf(KEY_AUTOMATIC_LYRICS_ENABLED to enabled)
 
     fun encodeFontManifest(manifest: LyricsFontManifest): Map<String, Any> {
         val safe = FontManifestPolicy.sanitize(manifest)
@@ -287,10 +299,28 @@ object ModuleSettingsSchema {
         )
     }
 
-    private fun Map<String, *>.automaticLyricsSourceOrder(): List<String> =
-        ModuleSettings.normalizeAutomaticLyricsSourceOrder(
-            string(KEY_AUTOMATIC_LYRICS_SOURCE_ORDER).split(','),
-        )
+    private fun Map<String, *>.hasLegacyAutomaticLyricsSourceOrder(): Boolean =
+        (number(KEY_SCHEMA_VERSION) ?: 0) < SOURCE_ORDER_SCHEMA_VERSION &&
+            (containsKey(KEY_AUTOMATIC_LYRICS_PREFER_NATIVE) || containsKey(KEY_AUTOMATIC_LYRICS_SOURCE_ORDER))
+
+    private fun Map<String, *>.automaticLyricsSourceOrder(): List<String> {
+        val order = string(KEY_AUTOMATIC_LYRICS_SOURCE_ORDER).split(',')
+        if (!hasLegacyAutomaticLyricsSourceOrder()) return ModuleSettings.normalizeAutomaticLyricsSourceOrder(order)
+        val legacyOrder = ModuleSettings.normalizeAutomaticLyricsSourceOrder(order + listOf(
+            CustomLyricsSources.AMLL,
+            CustomLyricsSources.AM_LYRICS,
+            CustomLyricsSources.AM_NATIVE,
+            CustomLyricsSources.LUNABEAT,
+        ))
+        return if (boolean(KEY_AUTOMATIC_LYRICS_PREFER_NATIVE, default = true)) {
+            listOf(CustomLyricsSources.AM_NATIVE) + legacyOrder.filterNot { it == CustomLyricsSources.AM_NATIVE }
+        } else legacyOrder
+    }
+
+    /** Fold the old preference into the actual order before removing the legacy key. */
+    fun legacyAutomaticLyricsSourceOrderMigrationValues(values: Map<String, *>): Map<String, Any> =
+        if (values.hasLegacyAutomaticLyricsSourceOrder()) encodeAutomaticLyricsSourceOrder(values.automaticLyricsSourceOrder())
+        else emptyMap()
 
     /**
      * Returns the host-local values required before removing the v11 target
@@ -337,7 +367,9 @@ object ModuleSettingsSchema {
         // app and are unreadable from AM++ (see AMTOOL_MODIFY_LOCALE_KEY).
         val storedVersion = storedValues.number(KEY_SCHEMA_VERSION)
         if (storedVersion != null && storedVersion >= ModuleConstants.CONFIG_SCHEMA_VERSION) return null
-        val source = if (storedValues.hasSettingValue()) storedValues else legacyValues
+        val source = if (storedValues.hasSettingValue() || storedValues.hasLegacyAutomaticLyricsSourceOrder()) {
+            storedValues
+        } else legacyValues
         return encode(decode(source))
     }
 
@@ -369,6 +401,7 @@ object ModuleSettingsSchema {
         KEY_DUAL_PANE_HIDE_STATUS_BAR,
         KEY_DISABLE_EDITORIAL_VIDEO_ON_TABLET,
         KEY_PHONE_LIQUID_GLASS,
+        KEY_GLASS_ADAPTIVE_FOREGROUND,
         KEY_PHONE_LIQUID_GLASS_BOTTOM_GAP_DP,
         KEY_PHONE_LIQUID_GLASS_PANEL_BLUR_DP,
         KEY_PHONE_LIQUID_GLASS_COLLAPSE,
@@ -398,6 +431,7 @@ object ModuleSettingsSchema {
         KEY_LLM_LYRICS_BASE_URL,
         KEY_LLM_LYRICS_API_KEY,
         KEY_LLM_LYRICS_MODEL,
+        KEY_LLM_LYRICS_CUSTOM_HEADERS,
         KEY_LLM_LYRICS_THINKING_ENABLED,
         KEY_LLM_LYRICS_THINKING_FORMAT,
         KEY_LLM_LYRICS_THINKING_EFFORT,
@@ -422,6 +456,7 @@ object ModuleSettingsSchema {
     private const val KEY_DISABLE_EDITORIAL_VIDEO_ON_TABLET =
         "disable_editorial_video_on_tablet"
     private const val KEY_PHONE_LIQUID_GLASS = "phone_liquid_glass_enabled"
+    private const val KEY_GLASS_ADAPTIVE_FOREGROUND = "glass_adaptive_foreground_enabled"
     private const val KEY_PHONE_LIQUID_GLASS_BOTTOM_GAP_DP = "phone_liquid_glass_bottom_gap_dp"
     private const val KEY_PHONE_LIQUID_GLASS_PANEL_BLUR_DP = "phone_liquid_glass_panel_blur_dp"
     private const val KEY_PHONE_LIQUID_GLASS_COLLAPSE = "phone_liquid_glass_collapse_enabled"
@@ -450,11 +485,13 @@ object ModuleSettingsSchema {
     private const val KEY_AUTOMATIC_LYRICS_ENABLED = "automatic_lyrics_enabled"
     private const val KEY_AUTOMATIC_LYRICS_PREFER_NATIVE = "automatic_lyrics_prefer_native"
     private const val KEY_AUTOMATIC_LYRICS_SOURCE_ORDER = "automatic_lyrics_source_order"
+    private const val SOURCE_ORDER_SCHEMA_VERSION = 21
     private const val KEY_LLM_LYRICS_ENABLED = "llm_lyrics_enabled"
     private const val KEY_LLM_LYRICS_TRANSLITERATION_ENABLED = "llm_lyrics_transliteration_enabled"
     private const val KEY_LLM_LYRICS_BASE_URL = "llm_lyrics_base_url"
     private const val KEY_LLM_LYRICS_API_KEY = "llm_lyrics_api_key"
     private const val KEY_LLM_LYRICS_MODEL = "llm_lyrics_model"
+    private const val KEY_LLM_LYRICS_CUSTOM_HEADERS = "llm_lyrics_custom_headers"
     private const val KEY_LLM_LYRICS_THINKING_ENABLED = "llm_lyrics_thinking_enabled"
     private const val KEY_LLM_LYRICS_THINKING_FORMAT = "llm_lyrics_thinking_format"
     private const val KEY_LLM_LYRICS_THINKING_EFFORT = "llm_lyrics_thinking_effort"

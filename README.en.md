@@ -40,9 +40,7 @@
    - **Left**: Large album artwork displayed independently with balanced margins.
    - **Center**: Track title & artist horizontally centered; wide progress slider; edge-to-edge playback controls (Previous at far left, Play/Pause centered, Next at far right); borderless secondary controls (Shuffle, Repeat, Favorite Star with native fill state synchronization, and More). The volume slider is removed to match modern in-car touch ergonomics (managed by steering wheel/knob hardware).
    - **Right**: Dedicated container for real-time lyrics and up-next playlist.
-2. **Dual Build Flavors (Product Flavors)**:
-   - **V1 (Fixed Lyrics)**: Classic 3-column with left artwork, centered controls, and fixed synchronized lyrics on the right.
-   - **V2 (Lyrics / Queue Switcher)**: Features a minimalist icon switcher bar at the bottom of the middle controls ([Translation], [Lyrics], [Playlist]), allowing instantaneous toggling between live lyrics and the native queue without squeezing the artwork.
+2. **Lyrics / Queue Switcher**: An icon bar switches the right pane between live lyrics and the native queue.
 3. **Immersive Fullscreen Mode**: Automatically hides status and navigation bars upon expanding the landscape player, utilizing every single pixel.
 4. **Viewport Height Normalization**: Normalizes typography and layout metrics against a standard 720-height reference, preventing label clipping across atypical in-car DPI configurations.
 

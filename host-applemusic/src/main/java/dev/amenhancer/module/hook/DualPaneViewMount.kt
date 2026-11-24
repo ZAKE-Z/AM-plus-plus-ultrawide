@@ -374,9 +374,7 @@ internal object ConstraintLayoutPane {
             }
             val column = songColumn ?: TabletSongColumnLayout(playerRoot, playerHost as ViewGroup,
                 { TabletSongColumnLayout.collapsePlayer(playerRoot) }, keepNativeFooter = true,
-                // The legacy player keeps lyrics fixed on the right; only the 7.0 fragment
-                // route can host the playlist switcher, so the legacy layout stays V1-shaped.
-                variant = SongColumnVariant.COVER_LEFT,
+                variant = SongColumnVariant.COVER_LEFT_SWITCHER,
                 lyricsHost = lyricsHost).also { songColumn = it }
             val statusBarInsetTopPx = playerRoot.rootWindowInsets?.systemWindowInsetTop
                 ?: playerRoot.resources.getIdentifier("status_bar_height", "dimen", "android")
@@ -886,4 +884,3 @@ internal object ConstraintLayoutPane {
     private fun dp(context: Context, value: Int): Int =
         (value * context.resources.displayMetrics.density + 0.5f).toInt()
 }
-

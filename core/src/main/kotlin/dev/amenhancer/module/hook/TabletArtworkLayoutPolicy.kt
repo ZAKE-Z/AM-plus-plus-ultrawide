@@ -9,9 +9,7 @@ data class TabletArtworkLayout(
 enum class SongColumnVariant {
     /** Upstream layout: the centered cover stacks above the controls inside the 45% column. */
     CENTERED,
-    /** Version 1: cover pinned to the far left, metadata/controls column beside it, lyrics on the right. */
-    COVER_LEFT,
-    /** Version 2: cover plus title/album on the left, a switcher in the middle, lyrics or controls on the right. */
+    /** Cover plus title/album on the left, with a lyrics/queue switcher. */
     COVER_LEFT_SWITCHER,
 }
 
@@ -27,15 +25,15 @@ data class SongColumnTuning(
     val controlsRowFraction: Float = 0.25f,
     /** Width share of the song grid column for both cover-left variants. */
     val songWidthFraction: Float = 0.52f,
-    /** V1 horizontal gap between the cover column and the middle controls column, in CSS px. */
+    /** Horizontal gap between the cover column and the middle controls column, in CSS px. */
     val coverControlsGapCss: Float = 16f,
-    /** V1/V2 padding between the column start and the cover's left edge, in CSS px. */
+    /** Padding between the column start and the cover's left edge, in CSS px. */
     val coverLeftInsetCss: Float = 0f,
-    /** V2 middle switcher strip width, in CSS px. */
+    /** Middle switcher strip width, in CSS px. */
     val switcherStripCss: Float = 72f,
-    /** V2 padding between the switcher strip and the right pane content, in CSS px. */
+    /** Padding between the switcher strip and the right pane content, in CSS px. */
     val switcherPanePadCss: Float = 28f,
-    /** V2 transport group width in CSS px; 0 keeps the 1.5 × cover default. */
+    /** Transport group width in CSS px; 0 keeps the 1.5 × cover default. */
     val transportSpreadCss: Float = 0f,
     /** Vertical bias of the centered controls block in CSS px; positive shifts it down. */
     val controlsCenterBiasCss: Float = 0f,
@@ -165,9 +163,9 @@ object TabletArtworkLayoutPolicy {
     private const val MENU_MAX_VW = 0.05f
     private const val MENU_MAX_VH = 0.04f
 
-    /** V2 middle strip that hosts the stacked play/lyrics switcher buttons. */
+    /** Middle strip that hosts the stacked play/lyrics switcher buttons. */
     private const val SWITCHER_STRIP_CSS_PX = 72f
-    /** V2 breathing room between the switcher strip and the right pane content. */
+    /** Breathing room between the switcher strip and the right pane content. */
     private const val SWITCHER_PANE_PAD_CSS_PX = 28f
 
     // TV/CarPlay reference (1800x720): 500 / 580 / 720 columns, cover 440.
@@ -227,7 +225,7 @@ object TabletArtworkLayoutPolicy {
         val queueWidth: Int,
         /** Horizontal center of the drag handle in player coordinates. */
         val thumbCenterX: Int,
-        /** Horizontal center of the V2 middle switcher strip; 0 outside the switcher variant. */
+        /** Horizontal center of the middle switcher strip; 0 outside the switcher layout. */
         val switcherCenterX: Int,
         val coverTop: Int,
         val coverSize: Int,
@@ -272,7 +270,7 @@ object TabletArtworkLayoutPolicy {
         val playIconSize: Int,
         /** Shuffle/repeat SVG viewBox 56, drawn at the inline 1.3 button-em size before scaling. */
         val modeIconSize: Int,
-        /** V2 transport group width inside the right pane; 0 leaves the caller's column width. */
+        /** Transport group width inside the right pane; 0 leaves the caller's column width. */
         val transportSpreadWidth: Int,
         val volumeTop: Int,
         val volumeHeight: Int,
@@ -396,7 +394,7 @@ object TabletArtworkLayoutPolicy {
                 thumbCenterX = centeredColumn + coverSize / 2f
                 switcherCenterX = 0f
             }
-            SongColumnVariant.COVER_LEFT, SongColumnVariant.COVER_LEFT_SWITCHER -> {
+            SongColumnVariant.COVER_LEFT_SWITCHER -> {
                 // Cover centered in the left column; metadata + controls stack in the
                 // middle column; the right pane keeps its own native viewport.
                 // Center the cover inside coverColumn so it never collapses to 0 margin.
@@ -408,8 +406,7 @@ object TabletArtworkLayoutPolicy {
                 // Center metadata across the combined cover and playback-controls region.
                 metadataLeft = coverLeft
                 metadataWidth = (contentLeft + contentWidth - metadataLeft).coerceAtLeast(1f)
-                // The native QUEUE pane keeps its own column in the left host (V1);
-                // V2 shows the playlist on the right instead.
+                // The switcher shows the playlist in the right pane.
                 queueLeft = 0f; queueWidth = coverColumn
                 thumbCenterX = coverColumn / 2f
                 switcherCenterX = 0f

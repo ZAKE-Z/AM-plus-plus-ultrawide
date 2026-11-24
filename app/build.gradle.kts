@@ -37,23 +37,10 @@ android {
         applicationId = "dev.amenhancer.module"
         minSdk = 26
         targetSdk = 37
-        versionCode = 120
-        versionName = "1.6.10"
+        versionCode = 121
+        versionName = "1.7.1-ultrawide"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    // Match :host-applemusic's layout dimension so each APK bakes in its dual-pane variant.
-    flavorDimensions += "layout"
-    productFlavors {
-        create("v1") {
-            dimension = "layout"
-            versionNameSuffix = "-v1"
-        }
-        create("v2") {
-            dimension = "layout"
-            versionNameSuffix = "-v2"
-        }
     }
 
     signingConfigs {

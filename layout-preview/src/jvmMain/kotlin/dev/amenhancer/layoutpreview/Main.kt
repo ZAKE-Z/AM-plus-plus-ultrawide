@@ -44,7 +44,7 @@ private fun PreviewApp() {
     var resW by remember { mutableStateOf(2560f) }
     var resH by remember { mutableStateOf(1600f) }
     var density by remember { mutableStateOf(2.5f) }
-    var variant by remember { mutableStateOf(SongColumnVariant.COVER_LEFT) }
+    val variant = SongColumnVariant.COVER_LEFT_SWITCHER
     var v2Controls by remember { mutableStateOf(false) }
     var tuning by remember { mutableStateOf(SongColumnTuning()) }
     var hint by remember { mutableStateOf("拖拽预览中的元素直接调整；拖动封面的水平位置、右下角缩放封面、拖控件块上下移动。") }
@@ -85,11 +85,7 @@ private fun PreviewApp() {
                 }, color = Color(0xFF9A9AA5), fontSize = 11.sp)
                 DevicePresets { w, h, d -> resW = w.toFloat(); resH = h.toFloat(); density = d / 160f }
             }
-            CardSection("版本") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = variant == SongColumnVariant.COVER_LEFT, onClick = { variant = SongColumnVariant.COVER_LEFT }, label = { Text("V1 三栏") })
-                    FilterChip(selected = variant == SongColumnVariant.COVER_LEFT_SWITCHER, onClick = { variant = SongColumnVariant.COVER_LEFT_SWITCHER }, label = { Text("V2 切换器") })
-                }
+            CardSection("右侧面板") {
                 if (variant == SongColumnVariant.COVER_LEFT_SWITCHER) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = !v2Controls, onClick = { v2Controls = false }, label = { Text("右面板: 歌词") })
@@ -103,9 +99,6 @@ private fun PreviewApp() {
                 SliderRow("封面左边距 css", tuning.coverLeftInsetCss, 0f, 80f) { tuning = tuning.copy(coverLeftInsetCss = it) }
                 SliderRow("控件块高度比", tuning.controlsRowFraction, 0.18f, 0.4f) { tuning = tuning.copy(controlsRowFraction = it) }
                 SliderRow("控件块垂直偏移 css", tuning.controlsCenterBiasCss, -120f, 120f) { tuning = tuning.copy(controlsCenterBiasCss = it) }
-                if (variant == SongColumnVariant.COVER_LEFT) {
-                    SliderRow("封面-控件间距 css", tuning.coverControlsGapCss, 0f, 80f) { tuning = tuning.copy(coverControlsGapCss = it) }
-                }
                 if (variant == SongColumnVariant.COVER_LEFT_SWITCHER) {
                     SliderRow("切换条宽 css", tuning.switcherStripCss, 40f, 140f) { tuning = tuning.copy(switcherStripCss = it) }
                     SliderRow("右面板内边距 css", tuning.switcherPanePadCss, 8f, 80f) { tuning = tuning.copy(switcherPanePadCss = it) }
@@ -193,8 +186,8 @@ private fun drawPlayer(scope: androidx.compose.ui.graphics.drawscope.DrawScope,
         size = androidx.compose.ui.geometry.Size(x(c.thumbWidth.toFloat()), y(c.thumbHeight.toFloat())),
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(c.thumbHeight / 2f * s))
 
-    // 控件块（V1 中列 / V2 右面板）
-    if (variant == SongColumnVariant.COVER_LEFT || v2Controls) {
+    // 右面板控件块
+    if (v2Controls) {
         // metadata
         scope.drawRoundRect(Color(0xFFE8E8F0), topLeft = androidx.compose.ui.geometry.Offset(x(c.metadataLeft.toFloat()), y(c.metadataTop.toFloat())),
             size = androidx.compose.ui.geometry.Size(x(c.metadataWidth * 0.55f), y(c.lineHeight * 0.55f)), cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f * s))
@@ -230,7 +223,7 @@ private fun drawPlayer(scope: androidx.compose.ui.graphics.drawscope.DrawScope,
         scope.drawCircle(Color(0xFF9A9AA5), radius = x(c.modeIconSize / 2f), center = androidx.compose.ui.geometry.Offset(x(c.contentLeft + c.contentWidth - c.modeIconSize / 2f), y(c.mediaTop + c.mediaHeight / 2f)))
     }
 
-    // V2 切换器
+    // 切换器
     if (variant == SongColumnVariant.COVER_LEFT_SWITCHER) {
         val mid = resH / 2f
         val r = 46f * density / 2f
@@ -243,7 +236,7 @@ private fun drawPlayer(scope: androidx.compose.ui.graphics.drawscope.DrawScope,
 
 // ---------------- 拖拽 ----------------
 
-private enum class DragTarget { NONE, COVER_X, COVER_SIZE, CONTROLS_Y, V1_SPLIT, SWITCHER_STRIP, TRANSPORT_W }
+private enum class DragTarget { NONE, COVER_X, COVER_SIZE, CONTROLS_Y, SWITCHER_STRIP, TRANSPORT_W }
 
 private fun hitTest(px: Float, py: Float, g: PreviewGeometry, variant: SongColumnVariant, scale: Float): String {
     val c = g.column ?: return "几何不可用"
@@ -255,7 +248,7 @@ private fun hitTest(px: Float, py: Float, g: PreviewGeometry, variant: SongColum
         inCover -> "拖动封面：水平移动封面"
         variant == SongColumnVariant.COVER_LEFT_SWITCHER && kotlin.math.abs(x - c.switcherCenterX) < 80f * 1f -> "拖动：调整切换条位置/宽度"
         x > c.contentLeft - 60f && x < c.contentLeft + c.contentWidth + 60f && y > c.controlsTop - 60f && y < c.controlsBottom + 60f ->
-            if (variant == SongColumnVariant.COVER_LEFT && x < c.contentLeft) "拖动分界线：调整左右列比例" else "拖动控件块：垂直移动"
+            "拖动控件块：垂直移动"
         else -> "空白区域"
     }
 }
@@ -276,10 +269,6 @@ private fun applyDrag(prevX: Float, prevY: Float, dx: Float, dy: Float, g: Previ
         variant == SongColumnVariant.COVER_LEFT_SWITCHER && kotlin.math.abs(x - c.switcherCenterX) < 90f -> {
             val strip = (tuning.switcherStripCss + dxCss).coerceIn(40f, 150f)
             tuning.copy(switcherStripCss = strip) to "切换条宽 → ${"%.0f".format(strip)} css"
-        }
-        variant == SongColumnVariant.COVER_LEFT && x < c.contentLeft && y > c.controlsTop - 80f && y < c.controlsBottom + 80f -> {
-            val frac = (tuning.songWidthFraction + dxCss / (resW / PIXEL_SCALE)).coerceIn(0.4f, 0.62f)
-            tuning.copy(songWidthFraction = frac) to "左列宽度比 → ${"%.3f".format(frac)}"
         }
         x > c.contentLeft - 70f && x < c.contentLeft + c.contentWidth + 70f && y > c.controlsTop - 70f && y < c.controlsBottom + 70f -> {
             val bias = (tuning.controlsCenterBiasCss + dyCss).coerceIn(-140f, 140f)

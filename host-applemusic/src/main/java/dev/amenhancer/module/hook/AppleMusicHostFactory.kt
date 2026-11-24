@@ -1,12 +1,16 @@
 package dev.amenhancer.module.hook
 
 import android.app.Application
+import android.app.Activity
 import android.content.res.Resources
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.TextView
 import dev.amenhancer.host.applemusic.AppleMusicHostProfile
+import dev.amenhancer.module.ModuleConstants
 import dev.amenhancer.module.config.TargetConfigClient
 
 /** Apple Music composition; the application supplies configuration and automatic-lyric services. */
@@ -36,6 +40,17 @@ object AppleMusicHostFactory {
         else LegacySettingsEntryInstaller(context).install(loader,observer)
 
     fun bindChrome(activity: android.app.Activity): ChromeHostBinding = LegacyChromeHostBinding(activity)
+    fun miniPlayerTextViews(root: View): List<TextView> =
+        listOf("mini_player_title", "mini_player_artist").mapNotNull { name ->
+            val id = root.resources.getIdentifier(name, "id", ModuleConstants.TARGET_PACKAGE)
+            root.findViewById<View>(id) as? TextView
+        }
+    fun miniPlayerTintIcons(root: View): List<ImageView> =
+        listOf("mini_player_play_btn", "mini_player_back_btn", "mini_player_next_btn").mapNotNull { name ->
+            val id = root.resources.getIdentifier(name, "id", ModuleConstants.TARGET_PACKAGE)
+            root.findViewById<View>(id) as? ImageView
+        }
+
     fun installChromeHooks(loader: ClassLoader, build: TargetBuild, observer: ChromeHookObserver): HostSubscription =
         LegacyChromeHookInstaller.install(loader, build, observer)
     fun newTypefaceResources(): LyricsTypefaceResourceBinding = LyricsTypefaceSession()
@@ -84,6 +99,7 @@ object AppleMusicHostFactory {
         lyricsTypefaceSession: LyricsTypefaceResourceBinding,
         currentSong: CurrentSongIdentityCache = CurrentSongIdentityCache(),
         autoLyricsRuntime: AutoLyricsRuntime? = null,
+        onOpenLyricsMenu: (Activity) -> Unit = {},
     ): TargetAdaptation {
         val build = targetBuild(application)
         val profile = checkNotNull(dev.amenhancer.host.applemusic.AppleMusicHostProfiles.find(build.packageName, build.versionName, build.versionCode))
@@ -101,6 +117,7 @@ object AppleMusicHostFactory {
             symbols = resolver,
             currentSong = currentSong,
             autoLyricsRuntime = autoLyricsRuntime,
+            installMenu = { registration -> AppleMusicLyricsMenuTarget(profile, classLoader, onOpenLyricsMenu).install(registration) },
         )
         val karaokeAnimation = AppleMusicCjkKaraokeAnimationTarget(
             symbols = resolver,
